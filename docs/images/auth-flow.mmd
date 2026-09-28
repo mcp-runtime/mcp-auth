@@ -1,0 +1,15 @@
+flowchart LR
+    client["MCP client<br/>Cursor, Claude, or another client"]
+    resource["MCP resource server<br/>Python, Go, or TypeScript SDK"]
+    auth["mcp-auth<br/>authorization server"]
+    idp["Upstream identity provider<br/>OIDC or OAuth 2.0"]
+    api["Downstream API"]
+
+    client -->|"1. MCP request"| resource
+    resource -.->|"2. 401 + protected-resource metadata"| client
+    client -->|"3. OAuth 2.1 Authorization Code + PKCE S256"| auth
+    auth <-->|"4. User login and consent"| idp
+    auth -->|"5. MCP access token"| client
+    client -->|"6. Bearer token"| resource
+    resource -.->|"7. Verify with JWKS"| auth
+    resource -->|"8. Separate downstream token"| api

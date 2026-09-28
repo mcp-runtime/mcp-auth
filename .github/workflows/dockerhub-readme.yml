@@ -1,0 +1,36 @@
+name: Sync Docker Hub README
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - docs/images/**
+      - scripts/prepare-docker-readme.py
+      - .github/workflows/dockerhub-readme.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dockerhub-readme
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare public links and rendered diagram
+        run: python3 scripts/prepare-docker-readme.py --ref "$GITHUB_SHA" --output "$RUNNER_TEMP/docker-readme.md"
+      - name: Update Docker Hub overview
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: princekrroshan01/mcp-auth-server
+          short-description: Provider-neutral OAuth 2.1 authorization server for MCP with Python, Go, and TypeScript SDKs.
+          readme-filepath: ${{ runner.temp }}/docker-readme.md

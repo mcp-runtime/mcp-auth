@@ -12,6 +12,35 @@ env:
   IMAGE_NAME: princekrroshan01/mcp-auth-server
 
 jobs:
+  release-artifacts:
+    name: Build and upload release artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@v6
+      - name: Package server binaries and SDKs
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: bash scripts/package-release.sh "$RELEASE_TAG"
+      - name: Upload packages and checksums to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/release/* --clobber
+
   build-and-push:
     name: Build and push Docker Hub image
     runs-on: ubuntu-latest
