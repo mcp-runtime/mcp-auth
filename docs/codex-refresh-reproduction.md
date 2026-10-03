@@ -30,7 +30,8 @@ gate for the auth server.
 On Codex 0.159.2, a single coordinated five-second cycle succeeded, but repeated
 cycles replayed a refresh token and revoked the family. A repeated 70-second
 run completed one cycle before replay during the next rotation. The five-second
-failure also reproduced after persisting and verifying the coordination feature.
+and 70-second failures also reproduced after persisting and verifying the
+coordination feature.
 Timing affects reproduction; a single legacy 70-second cycle did not replay.
 Enabling the experimental feature is therefore not sufficient evidence that
 the issue is fixed. These are local fixture observations, not production tests.

@@ -65,8 +65,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for key, value in (headers or {}).items():
             self.send_header(key, value)
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # A cancelled transport may discard the token response.
 
     def authorized(self):
         raw = self.headers.get("Authorization", "").removeprefix("Bearer ")
