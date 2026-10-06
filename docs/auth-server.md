@@ -752,3 +752,30 @@ signing keys don't collide.
   request none and every call fails `403 insufficient_scope` — a failure that
   looks like broken authentication. Derive the document from the verifier
   rather than hand-writing it.
+
+## Refresh outcomes and replay diagnosis
+
+Refresh outcomes emit `refresh_rotated` or `refresh_rejected` with bounded
+reasons: `rotated`, `unknown`, `expired`, `revoked`, `replay`, `client_mismatch`,
+`store_error`, or `issuance_failed`. A replay also emits
+`refresh_family_revoked` with its own success/failure outcome. `family_id` is a
+random opaque identifier shared with the original `token_issued` event; it is
+not a token or a token hash. The server-generated `request_id` matches the HTTP
+request log and `X-Request-ID` response header. Forwarded client attribution
+headers are not trusted or copied. `client_id` is the client resolved by token
+endpoint authentication/registration, not a verified human or application name.
+
+The Store contract now includes `ConsumeRefreshTokenForClient`: check the
+client binding before consuming or classifying a replay. Memory and SQLite
+implement it atomically. A mismatch never consumes the owner's credential or
+revokes its family. Replays by the bound client still revoke the entire family;
+late persistence of a rotated descendant cannot revive a revoked family.
+Custom Store implementations must implement the same atomic binding semantics
+and reject insertion into revoked families. No database schema migration is
+needed for the built-in SQLite Store.
+
+Multi-process clients must coordinate refresh ownership and share updated
+credentials. A stale client replay remains a security violation and is never
+accepted by a grace window. These server checks make the cause diagnosable;
+they do not replace client coordination or change a running client's OAuth
+refresh implementation.

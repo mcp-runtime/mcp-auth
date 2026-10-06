@@ -260,14 +260,37 @@ func (s *SQLiteStore) SaveRefreshToken(token RefreshToken) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT OR REPLACE INTO refresh_tokens
-(value_hash,family_id,client_id,subject,scope,resource,expires_at,used,revoked) VALUES (?,?,?,?,?,?,?,?,?)`,
+	result, err := s.db.Exec(`INSERT OR REPLACE INTO refresh_tokens
+(value_hash,family_id,client_id,subject,scope,resource,expires_at,used,revoked)
+SELECT ?,?,?,?,?,?,?,?,? WHERE ?='' OR NOT EXISTS
+(SELECT 1 FROM refresh_tokens WHERE family_id=? AND revoked=1)`,
 		token.ValueHash, token.FamilyID, token.ClientID, token.Subject, string(scope), token.Resource, token.ExpiresAt.UnixNano(),
-		boolInt(token.Used), boolInt(token.Revoked))
-	return err
+		boolInt(token.Used), boolInt(token.Revoked), token.FamilyID, token.FamilyID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrRefreshRevoked
+	}
+	return nil
 }
 
 func (s *SQLiteStore) ConsumeRefreshToken(value string, now time.Time) (RefreshToken, error) {
+	return s.consumeRefreshToken(value, "", now)
+}
+
+func (s *SQLiteStore) ConsumeRefreshTokenForClient(value, clientID string, now time.Time) (RefreshToken, error) {
+	if clientID == "" {
+		return RefreshToken{}, ErrRefreshClientMismatch
+	}
+	return s.consumeRefreshToken(value, clientID, now)
+}
+
+func (s *SQLiteStore) consumeRefreshToken(value, clientID string, now time.Time) (RefreshToken, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return RefreshToken{}, err
@@ -288,11 +311,17 @@ FROM refresh_tokens WHERE value_hash=?`, HashSecret(value)).Scan(&token.FamilyID
 	}
 	token.ValueHash, token.ExpiresAt = HashSecret(value), time.Unix(0, expires)
 	token.Used, token.Revoked = used != 0, revoked != 0
-	if token.ExpiresAt.Before(now) || token.Revoked {
-		return RefreshToken{}, ErrNotFound
+	if clientID != "" && token.ClientID != clientID {
+		return token, ErrRefreshClientMismatch
+	}
+	if token.Revoked {
+		return token, ErrRefreshRevoked
+	}
+	if !token.ExpiresAt.After(now) {
+		return token, ErrRefreshExpired
 	}
 	if token.Used {
-		return RefreshToken{}, ErrAlreadyUsed
+		return token, ErrAlreadyUsed
 	}
 	if err := json.Unmarshal([]byte(scope), &token.Scope); err != nil {
 		return RefreshToken{}, err

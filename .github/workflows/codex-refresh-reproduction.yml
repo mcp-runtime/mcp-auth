@@ -1,0 +1,39 @@
+name: Codex OAuth refresh reproduction
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        access-ttl: [5, 70]
+        mode: [coordinated, legacy]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned client
+        run: npm install --prefix "$RUNNER_TEMP/codex-fixture" --ignore-scripts --no-audit --no-fund @openai/codex@0.159.2
+      - name: Run isolated two-process reproduction
+        env:
+          ACCESS_TTL: ${{ matrix.access-ttl }}
+          MODE: ${{ matrix.mode }}
+        shell: bash
+        run: |
+          args=()
+          if [[ "$MODE" == legacy ]]; then args+=(--legacy); fi
+          python3 tests/e2e/codex_refresh_cancellation.py \
+            --codex "$RUNNER_TEMP/codex-fixture/node_modules/.bin/codex" \
+            --cycles 3 --access-ttl "$ACCESS_TTL" "${args[@]}" > refresh-report.json
+      - name: Preserve bounded diagnostic report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: refresh-${{ matrix.mode }}-${{ matrix.access-ttl }}
+          path: refresh-report.json
+          if-no-files-found: error

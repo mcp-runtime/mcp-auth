@@ -4,12 +4,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
 
 var ErrNotFound = errors.New("record not found")
 var ErrAlreadyUsed = errors.New("record already used")
+var ErrRefreshExpired = fmt.Errorf("refresh expired: %w", ErrNotFound)
+var ErrRefreshRevoked = fmt.Errorf("refresh revoked: %w", ErrNotFound)
+var ErrRefreshClientMismatch = errors.New("refresh client mismatch")
 
 type Client struct {
 	ID                string
@@ -91,6 +95,8 @@ type Store interface {
 	ConsumeAuthorizationCode(string, time.Time) (AuthorizationCode, error)
 	SaveRefreshToken(RefreshToken) error
 	ConsumeRefreshToken(string, time.Time) (RefreshToken, error)
+	// Bind the authenticated client before mutation or replay classification.
+	ConsumeRefreshTokenForClient(string, string, time.Time) (RefreshToken, error)
 	RevokeRefreshToken(string) error
 	RevokeRefreshFamily(string) error
 	SaveConsentRequest(ConsentRequest) error
@@ -187,20 +193,45 @@ func (s *MemoryStore) ConsumeAuthorizationCode(value string, now time.Time) (Aut
 func (s *MemoryStore) SaveRefreshToken(token RefreshToken) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for _, existing := range s.refresh {
+		if token.FamilyID != "" && existing.FamilyID == token.FamilyID && existing.Revoked {
+			return ErrRefreshRevoked
+		}
+	}
 	s.refresh[token.ValueHash] = token
 	return nil
 }
 
 func (s *MemoryStore) ConsumeRefreshToken(value string, now time.Time) (RefreshToken, error) {
+	return s.consumeRefreshToken(value, "", now)
+}
+
+func (s *MemoryStore) ConsumeRefreshTokenForClient(value, clientID string, now time.Time) (RefreshToken, error) {
+	if clientID == "" {
+		return RefreshToken{}, ErrRefreshClientMismatch
+	}
+	return s.consumeRefreshToken(value, clientID, now)
+}
+
+func (s *MemoryStore) consumeRefreshToken(value, clientID string, now time.Time) (RefreshToken, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	hash := HashSecret(value)
 	token, ok := s.refresh[hash]
-	if !ok || token.ExpiresAt.Before(now) || token.Revoked {
+	if !ok {
 		return RefreshToken{}, ErrNotFound
 	}
+	if clientID != "" && token.ClientID != clientID {
+		return token, ErrRefreshClientMismatch
+	}
+	if token.Revoked {
+		return token, ErrRefreshRevoked
+	}
+	if !token.ExpiresAt.After(now) {
+		return token, ErrRefreshExpired
+	}
 	if token.Used {
-		return RefreshToken{}, ErrAlreadyUsed
+		return token, ErrAlreadyUsed
 	}
 	token.Used = true
 	s.refresh[hash] = token

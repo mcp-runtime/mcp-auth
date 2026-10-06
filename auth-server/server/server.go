@@ -115,14 +115,16 @@ func (s *Server) Handler() http.Handler {
 // attempt can be diagnosed from the log alone, without opening the store.
 // Disabled by MCP_AUTH_LOG_LEVEL=silent for deployments that want quieter logs.
 func (s *Server) requestLogging(next http.Handler) http.Handler {
-	if strings.EqualFold(s.Config.LogLevel, "silent") {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := randomID()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		r = r.WithContext(context.WithValue(r.Context(), auditRequestIDKey{}, requestID))
+		recorder.Header().Set("X-Request-ID", requestID)
 		next.ServeHTTP(recorder, r)
+		if strings.EqualFold(s.Config.LogLevel, "silent") {
+			return
+		}
 		s.Audit.Request(requestID, r.Method, r.URL.Path, recorder.status, time.Since(start), r.FormValue("client_id"))
 	})
 }
@@ -423,7 +425,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	case "authorization_code":
 		s.authorizationCodeToken(w, r, client)
 	case "refresh_token":
-		s.refreshTokenToken(w, r)
+		s.refreshTokenToken(w, r, client)
 	case "urn:ietf:params:oauth:grant-type:token-exchange":
 		s.exchange(w, r, client)
 	default:
@@ -453,52 +455,95 @@ func (s *Server) authorizationCodeToken(w http.ResponseWriter, r *http.Request, 
 	s.issueTokens(w, r.Context(), code.ClientID, code.Subject, code.Scope, resource, "")
 }
 
-func (s *Server) refreshTokenToken(w http.ResponseWriter, r *http.Request) {
+type auditRequestIDKey struct{}
+
+func refreshAuditAttrs(r *http.Request, clientID string, token RefreshToken, reason string) map[string]any {
+	attrs := map[string]any{"grant_type": "refresh_token", "client_id": clientID, "reason": reason}
+	if id, ok := r.Context().Value(auditRequestIDKey{}).(string); ok {
+		attrs["request_id"] = id
+	}
+	if token.FamilyID != "" {
+		attrs["family_id"] = token.FamilyID
+	}
+	if token.Resource != "" {
+		attrs["resource"] = token.Resource
+	}
+	return attrs
+}
+
+func (s *Server) refreshTokenToken(w http.ResponseWriter, r *http.Request, client Client) {
 	old := r.FormValue("refresh_token")
-	token, err := s.Store.ConsumeRefreshToken(old, s.now())
+	token, err := s.Store.ConsumeRefreshTokenForClient(old, client.ID, s.now())
 	if err != nil {
+		reason := "store_error"
+		switch {
+		case errors.Is(err, ErrRefreshClientMismatch):
+			reason = "client_mismatch"
+		case errors.Is(err, ErrRefreshRevoked):
+			reason = "revoked"
+		case errors.Is(err, ErrRefreshExpired):
+			reason = "expired"
+		case errors.Is(err, ErrAlreadyUsed):
+			reason = "replay"
+		case errors.Is(err, ErrNotFound):
+			reason = "unknown"
+		}
+		s.Audit.Event("refresh_rejected", "failure", refreshAuditAttrs(r, client.ID, token, reason))
 		if errors.Is(err, ErrAlreadyUsed) {
-			_ = s.Store.RevokeRefreshFamily(old)
+			outcome, revokeReason := "success", "replay"
+			if revokeErr := s.Store.RevokeRefreshFamily(old); revokeErr != nil {
+				outcome, revokeReason = "failure", "store_error"
+			}
+			s.Audit.Event("refresh_family_revoked", outcome, refreshAuditAttrs(r, client.ID, token, revokeReason))
+			if outcome != "success" {
+				oauthError(w, http.StatusInternalServerError, "server_error")
+				return
+			}
+		}
+		if reason == "store_error" {
+			oauthError(w, http.StatusInternalServerError, "server_error")
+			return
 		}
 		oauthError(w, http.StatusBadRequest, "invalid_grant")
 		return
 	}
-	if token.ClientID != r.FormValue("client_id") {
-		oauthError(w, http.StatusBadRequest, "invalid_grant")
-		return
+	outcome, reason := "success", "rotated"
+	if !s.issueTokens(w, r.Context(), token.ClientID, token.Subject, token.Scope, token.Resource, token.FamilyID) {
+		outcome, reason = "failure", "issuance_failed"
 	}
-	s.issueTokens(w, r.Context(), token.ClientID, token.Subject, token.Scope, token.Resource, token.FamilyID)
+	s.Audit.Event("refresh_rotated", outcome, refreshAuditAttrs(r, client.ID, token, reason))
 }
 
-func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientID, subject string, scopes []string, resource, familyID string) {
+func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientID, subject string, scopes []string, resource, familyID string) bool {
 	if !contains(s.Config.configuredResources(), resource) {
 		oauthError(w, http.StatusBadRequest, "invalid_target")
-		return
+		return false
 	}
 	allowedScopes := s.Config.scopesForResource(resource)
 	for _, scope := range scopes {
 		if !contains(allowedScopes, scope) {
 			oauthError(w, http.StatusBadRequest, "invalid_scope")
-			return
+			return false
 		}
 	}
 	access, err := s.KeyProvider.Sign(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "")
 	if err != nil {
-		s.Audit.Event("token_issue", "failure", map[string]any{"reason": err.Error()})
+		s.Audit.Event("token_issue", "failure", map[string]any{"reason": "signing_failed"})
 		oauthError(w, http.StatusInternalServerError, "server_error")
-		return
+		return false
 	}
 	refresh := randomID()
 	if familyID == "" {
 		familyID = randomID()
 	}
 	if err := s.Store.SaveRefreshToken(RefreshToken{ValueHash: HashSecret(refresh), FamilyID: familyID, ClientID: clientID, Subject: subject, Scope: scopes, Resource: resource, ExpiresAt: s.now().Add(s.Config.RefreshTokenTTL)}); err != nil {
-		s.Audit.Event("token_issue", "failure", map[string]any{"reason": err.Error()})
+		s.Audit.Event("token_issue", "failure", map[string]any{"reason": "refresh_persistence_failed"})
 		oauthError(w, http.StatusInternalServerError, "server_error")
-		return
+		return false
 	}
-	s.Audit.Event("token_issued", "success", map[string]any{"client_id": clientID, "subject": subject, "resource": resource})
+	s.Audit.Event("token_issued", "success", map[string]any{"client_id": clientID, "subject": subject, "resource": resource, "family_id": familyID})
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": int(s.Config.AccessTokenTTL.Seconds()), "refresh_token": refresh, "scope": strings.Join(scopes, " ")})
+	return true
 }
 
 // exchange handles RFC 8693 token exchange. The caller has already
