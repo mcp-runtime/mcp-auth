@@ -45,7 +45,7 @@ func (s *SQLiteStore) Close() error { return s.db.Close() }
 // existing database file applies exactly the missing ALTER/CREATE statements
 // instead of relying on CREATE TABLE IF NOT EXISTS, which silently no-ops on
 // a table that already exists in its old shape.
-const currentSchemaVersion = 5
+const currentSchemaVersion = 6
 
 // migrations[v] takes a database at schema version v to v+1. Statements must
 // be additive and safe to run inside a single transaction alongside the
@@ -73,13 +73,15 @@ CREATE TABLE IF NOT EXISTS upstream_sessions (
 -- rewrite the operator-provisioned ones: loadResourceClients saves its
 -- clients with DynamicRegistration false on every boot.
 UPDATE clients SET dynamic_registration = 1;`,
+	5: `ALTER TABLE clients ADD COLUMN resource TEXT NOT NULL DEFAULT '';`,
 }
 
 const freshSchema = `
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL,
   token_endpoint_auth TEXT NOT NULL, secret_hash TEXT NOT NULL, public_key_pem TEXT NOT NULL DEFAULT '',
-  algorithm TEXT NOT NULL DEFAULT 'RS256', dynamic_registration INTEGER NOT NULL DEFAULT 0
+  algorithm TEXT NOT NULL DEFAULT 'RS256', dynamic_registration INTEGER NOT NULL DEFAULT 0,
+  resource TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS client_assertions (
   client_id TEXT NOT NULL, jti TEXT NOT NULL, expires_at INTEGER NOT NULL,
@@ -162,11 +164,11 @@ func (s *SQLiteStore) SaveClient(client Client) error {
 	if client.DynamicRegistration {
 		dynamic = 1
 	}
-	_, err = s.db.Exec(`INSERT INTO clients (id,name,redirect_uris,token_endpoint_auth,secret_hash,public_key_pem,algorithm,dynamic_registration)
-VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, redirect_uris=excluded.redirect_uris,
+	_, err = s.db.Exec(`INSERT INTO clients (id,name,redirect_uris,token_endpoint_auth,secret_hash,public_key_pem,algorithm,dynamic_registration,resource)
+VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, redirect_uris=excluded.redirect_uris,
 token_endpoint_auth=excluded.token_endpoint_auth, secret_hash=excluded.secret_hash, public_key_pem=excluded.public_key_pem,
-algorithm=excluded.algorithm, dynamic_registration=excluded.dynamic_registration`,
-		client.ID, client.Name, string(redirects), client.TokenEndpointAuth, client.SecretHash, client.PublicKeyPEM, algorithm, dynamic)
+algorithm=excluded.algorithm, dynamic_registration=excluded.dynamic_registration, resource=excluded.resource`,
+		client.ID, client.Name, string(redirects), client.TokenEndpointAuth, client.SecretHash, client.PublicKeyPEM, algorithm, dynamic, client.Resource)
 	return err
 }
 
@@ -174,8 +176,8 @@ func (s *SQLiteStore) GetClient(id string) (Client, error) {
 	var client Client
 	var redirects string
 	var dynamic int
-	err := s.db.QueryRow(`SELECT id,name,redirect_uris,token_endpoint_auth,secret_hash,public_key_pem,algorithm,dynamic_registration FROM clients WHERE id=?`, id).
-		Scan(&client.ID, &client.Name, &redirects, &client.TokenEndpointAuth, &client.SecretHash, &client.PublicKeyPEM, &client.Algorithm, &dynamic)
+	err := s.db.QueryRow(`SELECT id,name,redirect_uris,token_endpoint_auth,secret_hash,public_key_pem,algorithm,dynamic_registration,resource FROM clients WHERE id=?`, id).
+		Scan(&client.ID, &client.Name, &redirects, &client.TokenEndpointAuth, &client.SecretHash, &client.PublicKeyPEM, &client.Algorithm, &dynamic, &client.Resource)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Client{}, ErrNotFound
 	}

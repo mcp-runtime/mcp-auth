@@ -34,7 +34,7 @@ func TestIdentityCallbackURLOverride(t *testing.T) {
 func TestIdentityCallbackURLValidation(t *testing.T) {
 	base := func() Config {
 		return Config{
-			Issuer: "https://auth.example.com", Resource: "https://mcp.example.com/mcp",
+			Issuer: "https://auth.example.com", Resources: []string{"https://mcp.example.com/mcp"},
 			RequireHTTPS: true, PrivateKeyFile: "key.pem", StoreBackend: "sqlite",
 			DatabaseURL: "/tmp/x.db", AllowedScopes: []string{"tools:read"},
 		}

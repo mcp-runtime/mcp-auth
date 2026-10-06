@@ -67,7 +67,7 @@ func TestRefreshAuditReasonsCorrelationAndRedaction(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw := "never-log-this-refresh"
-			token := RefreshToken{ValueHash: HashSecret(raw), FamilyID: "opaque-family", ClientID: "client", Scope: []string{"tools:read"}, Resource: s.Config.Resource, ExpiresAt: time.Now().Add(time.Hour)}
+			token := RefreshToken{ValueHash: HashSecret(raw), FamilyID: "opaque-family", ClientID: "client", Scope: []string{"tools:read"}, Resource: s.Config.Resources[0], ExpiresAt: time.Now().Add(time.Hour)}
 			switch reason {
 			case "expired":
 				token.ExpiresAt = time.Now().Add(-time.Hour)

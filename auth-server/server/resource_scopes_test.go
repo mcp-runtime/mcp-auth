@@ -73,7 +73,7 @@ func TestResourceScopesBoundToRequestedAudience(t *testing.T) {
 
 func TestResourceScopesConfigurationFailsClosed(t *testing.T) {
 	base := Config{
-		Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp",
+		Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"},
 		LocalDevelopment: true, StoreBackend: "memory",
 	}
 	for _, raw := range []string{
@@ -90,7 +90,7 @@ func TestResourceScopesConfigurationFailsClosed(t *testing.T) {
 	}
 }
 
-func TestConnectorDoesNotRequireMCPScopes(t *testing.T) {
+func TestConnectorIsIndependentOfResourceScopes(t *testing.T) {
 	connector := ConnectorConfig{
 		Issuer: "https://idp.example.com", AuthorizationEndpoint: "https://idp.example.com/authorize",
 		TokenEndpoint: "https://idp.example.com/token", JWKSURI: "https://idp.example.com/jwks",

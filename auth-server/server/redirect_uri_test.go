@@ -55,7 +55,7 @@ func TestValidRedirectAcceptsNativeAppSchemes(t *testing.T) {
 func TestRegisterAcceptsPrivateUseSchemeRedirect(t *testing.T) {
 	config := Config{
 		Issuer:              "http://127.0.0.1:8080",
-		Resource:            "http://127.0.0.1:8081/mcp",
+		Resources:           []string{"http://127.0.0.1:8081/mcp"},
 		LocalDevelopment:    true,
 		RegistrationEnabled: true,
 		StoreBackend:        "memory",
@@ -123,7 +123,6 @@ func TestAllowlistAcceptsDocumentedRedirectURIs(t *testing.T) {
 		ClientID:                  "client",
 		TokenEndpointAuthMethod:   "none",
 		ExchangeClientID:          "exchange",
-		MCPScopes:                 []string{"tools:read"},
 		AllowedClientRedirectURIs: append([]string(nil), documentedRedirectURIs...),
 	}
 	if err := connector.validate("example", false); err != nil {

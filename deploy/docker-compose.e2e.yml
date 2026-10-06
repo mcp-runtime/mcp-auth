@@ -46,7 +46,7 @@ services:
       openssl genrsa -out /var/lib/mcp-resource-auth/private.pem 2048 &&
       openssl rsa -in /var/lib/mcp-resource-auth/private.pem -pubout -out /var/lib/mcp-resource-auth/public.pem &&
       printf '%s\\n' compose-e2e-key > /var/lib/mcp-resource-auth/key_id &&
-      printf '%s' '[{\"client_id\":\"compose-resource-server\",\"name\":\"demo-mcp e2e\",\"public_key_file\":\"/var/lib/mcp-resource-auth/public.pem\"}]' > /var/lib/mcp-resource-auth/resource-clients.json &&
+      printf '%s' '[{\"client_id\":\"compose-resource-server\",\"name\":\"demo-mcp e2e\",\"resource\":\"http://mcp-server:6328/mcp\",\"public_key_file\":\"/var/lib/mcp-resource-auth/public.pem\"}]' > /var/lib/mcp-resource-auth/resource-clients.json &&
       chmod 0644 /var/lib/mcp-resource-auth/private.pem /var/lib/mcp-resource-auth/public.pem /var/lib/mcp-resource-auth/key_id /var/lib/mcp-resource-auth/resource-clients.json &&
       sleep infinity"
     volumes:
@@ -90,7 +90,7 @@ services:
       dockerfile: Dockerfile
     environment:
       MCP_AUTH_ISSUER: http://mcp-auth:8080
-      MCP_AUTH_RESOURCE: http://mcp-server:6328/mcp
+      MCP_AUTH_RESOURCES: http://mcp-server:6328/mcp
       MCP_AUTH_LISTEN_ADDR: :8080
       MCP_AUTH_ALLOWED_SCOPES: tools:read
       MCP_AUTH_REQUIRE_HTTPS: "false"

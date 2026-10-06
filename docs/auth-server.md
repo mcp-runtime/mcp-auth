@@ -96,7 +96,6 @@ Important settings:
   `client_id` where the request carries one — so a failed connection attempt can be diagnosed from the log
   alone. Set to `silent` to disable it for a deployment that wants quieter logs. This is separate from the
   structured OAuth event audit log, which always runs and always redacts tokens/secrets/codes/keys/assertions.
-- `MCP_AUTH_RESOURCE`: canonical resource audience placed in `aud`.
 - `MCP_AUTH_TRUST_PROXY_TLS`: default `false`. Set `true` only when a trusted
   reverse proxy terminates TLS in front of this process, overwrites inbound
   `X-Forwarded-*` headers, and is the **only** route to it. `X-Forwarded-Proto`
@@ -104,8 +103,7 @@ Important settings:
   `MCP_AUTH_REQUIRE_HTTPS` means real TLS on the listener. Turning it on
   without restricting network access to the proxy lets any caller that can
   reach the process satisfy the HTTPS requirement by setting one header.
-- `MCP_AUTH_RESOURCES`: comma-separated resource allow-list placed in `aud`; use this for multi-resource deployments.
-- `MCP_AUTH_RESOURCE`: legacy single-resource setting, retained for compatibility when `MCP_AUTH_RESOURCES` is unset.
+- `MCP_AUTH_RESOURCES`: comma-separated resource allow-list placed in `aud`.
 - `MCP_AUTH_PRIVATE_KEY_FILE`: PEM RSA key path. Local mode generates an ephemeral test key.
 - `MCP_AUTH_STORE`: `memory` for tests/local development or `sqlite` for durable single-node deployments.
 - `MCP_AUTH_DATABASE_URL`: SQLite path when `MCP_AUTH_STORE=sqlite`.
@@ -146,7 +144,8 @@ Important settings:
   the Compose token-exchange test; leave it empty outside local development.
 - `MCP_AUTH_RESOURCE_CLIENTS_FILE`: JSON array of resource servers pre-provisioned to
   authenticate the token-exchange grant with RFC 7523 `private_key_jwt`. Each entry
-  is `{"client_id", "name", "public_key_pem"}` or `{"client_id", "name", "public_key_file"}`
+  has `client_id`, `name`, and `resource` (one URL in `MCP_AUTH_RESOURCES`), plus either
+  `public_key_pem` or `public_key_file`
   (exactly one of the last two), plus an optional `"algorithm"` (`RS256` default, or
   `PS256`/`ES256` — must match the key's own type). A resource server's own private
   key never appears here; only its public key is registered, so the auth server can
@@ -590,7 +589,7 @@ when one name reaches the provider from both sides.
 
 `localhost` and `127.0.0.1` are different strings to an issuer or audience
 comparison even though they resolve to the same host, so `MCP_AUTH_ISSUER`,
-`MCP_AUTH_RESOURCE`, the connector's `allowed_upstream_callback_uris`, the
+`MCP_AUTH_RESOURCES`, the connector's `allowed_upstream_callback_uris`, the
 redirect URI registered with the upstream provider, and the URL handed to the
 MCP client must all agree on one spelling. Publishing a container port with
 `-p 127.0.0.1:…` binds IPv4 only, so a client resolving `localhost` to `::1`
@@ -662,13 +661,13 @@ The built-in `LocalKeyProvider` wraps the development PEM loader and ephemeral g
 One `auth-server` process serves **one connector** and an **allow-list of
 resources**. `MCP_AUTH_RESOURCES` takes a comma-separated list; `/authorize`
 and `/token` reject any `resource` parameter outside it, and each issued token
-is bound to the single resource the client asked for. `MCP_AUTH_RESOURCE` is
-the legacy single-value form, used only when `MCP_AUTH_RESOURCES` is unset.
+is bound to the single resource the client asked for. Resource clients used for
+token exchange are each bound to exactly one configured resource, and a subject
+token for another resource is rejected.
 
 The selected connector handles upstream identity. A resource's MCP scopes are
-configured separately with `MCP_AUTH_RESOURCE_SCOPES`. The older connector
-`mcp_scopes` field remains an optional fallback for resources without an
-explicit scope policy.
+configured separately with `MCP_AUTH_RESOURCE_SCOPES`, or with
+`MCP_AUTH_ALLOWED_SCOPES` when no resource-specific scope policy is set.
 
 `MCP_AUTH_CONNECTOR` still selects exactly one entry out of
 `MCP_AUTH_CONNECTORS_FILE` even when that file defines several. A connectors
@@ -715,13 +714,13 @@ Each backend is a separate `auth-server` process, e.g.:
 
 ```bash
 MCP_AUTH_ISSUER=https://inventory-auth.example.com \
-MCP_AUTH_RESOURCE=https://mcp.example.com/inventory/mcp \
+MCP_AUTH_RESOURCES=https://mcp.example.com/inventory/mcp \
 MCP_AUTH_CONNECTOR=inventory \
 MCP_AUTH_LISTEN_ADDR=127.0.0.1:8081 \
 go run ./auth-server/cmd/auth-server &
 
 MCP_AUTH_ISSUER=https://internal-api-auth.example.com \
-MCP_AUTH_RESOURCE=https://mcp.example.com/internal-api/mcp \
+MCP_AUTH_RESOURCES=https://mcp.example.com/internal-api/mcp \
 MCP_AUTH_CONNECTOR=internal-api \
 MCP_AUTH_LISTEN_ADDR=127.0.0.1:8082 \
 go run ./auth-server/cmd/auth-server &

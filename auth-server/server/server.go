@@ -47,7 +47,7 @@ func NewServer(config Config, store Store, identityProvider IdentityProvider, ex
 
 func NewServerWithKeyProvider(config Config, store Store, identityProvider IdentityProvider, exchanger TokenExchanger, keyProvider KeyProvider, auditWriter io.Writer) (*Server, error) {
 	if config.Issuer == "" || len(config.configuredResources()) == 0 {
-		return nil, errors.New("issuer and resource are required")
+		return nil, errors.New("issuer and resources are required")
 	}
 	if store == nil {
 		store = NewMemoryStore()
@@ -549,11 +549,16 @@ func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientI
 // exchange handles RFC 8693 token exchange. The caller has already
 // authenticated as client (see authenticateClient); this additionally
 // verifies that subject_token is a still-valid access token this server
-// itself issued for its own resource, rather than relaying an arbitrary
+// itself issued for the authenticated resource client's bound resource, rather than relaying an arbitrary
 // caller-supplied string to the upstream provider.
 func (s *Server) exchange(w http.ResponseWriter, r *http.Request, client Client) {
 	if s.TokenExchanger == nil {
 		oauthError(w, http.StatusBadRequest, "unsupported_grant_type")
+		return
+	}
+	if client.TokenEndpointAuth != "private_key_jwt" || client.Resource == "" || !contains(s.Config.configuredResources(), client.Resource) {
+		s.Audit.Event("token_exchange", "failure", map[string]any{"client_id": client.ID, "reason": "resource_client_not_bound"})
+		oauthError(w, http.StatusUnauthorized, "invalid_client")
 		return
 	}
 	subjectToken := r.FormValue("subject_token")
@@ -563,7 +568,7 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request, client Client)
 		oauthError(w, http.StatusBadRequest, "invalid_grant")
 		return
 	}
-	if subjectClaims["aud"] != s.Config.Resource {
+	if subjectClaims["aud"] != client.Resource {
 		s.Audit.Event("token_exchange", "failure", map[string]any{"client_id": client.ID, "audience": r.FormValue("audience"), "reason": "subject_token_audience_mismatch"})
 		oauthError(w, http.StatusBadRequest, "invalid_grant")
 		return

@@ -36,7 +36,7 @@ func TestLoadConnectorsFillsMissingEndpointsViaDiscovery(t *testing.T) {
 	issuer = server.URL
 
 	path := filepath.Join(t.TempDir(), "connectors.json")
-	body := fmt.Sprintf(`{"provider":{"issuer":%q,"client_id":"client","exchange_client_id":"exchange","token_endpoint_auth_method":"none","mcp_scopes":["tools:read"]}}`, server.URL)
+	body := fmt.Sprintf(`{"provider":{"issuer":%q,"client_id":"client","exchange_client_id":"exchange","token_endpoint_auth_method":"none"}}`, server.URL)
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestLoadConnectorsSkipsDiscoveryWhenFullySpecified(t *testing.T) {
 		"token_endpoint":"http://idp.example.com/token",
 		"jwks_uri":"http://idp.example.com/jwks",
 		"client_id":"client","exchange_client_id":"exchange",
-		"token_endpoint_auth_method":"none","mcp_scopes":["tools:read"]
+		"token_endpoint_auth_method":"none"
 	}}`, unreachableIssuer)
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestDiscoverOIDCConfigurationChecksIssuer(t *testing.T) {
 
 func TestLoadConnectorsReportsDiscoveryFailure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "connectors.json")
-	body := `{"provider":{"issuer":"http://127.0.0.1:1","client_id":"client","exchange_client_id":"exchange","token_endpoint_auth_method":"none","mcp_scopes":["tools:read"]}}`
+	body := `{"provider":{"issuer":"http://127.0.0.1:1","client_id":"client","exchange_client_id":"exchange","token_endpoint_auth_method":"none"}}`
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}

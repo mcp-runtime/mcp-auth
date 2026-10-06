@@ -47,7 +47,7 @@ func TestConfigSecureDefaults(t *testing.T) {
 // constructed) expected audience. All endpoint derivation must go through
 // Config's methods so there is exactly one computation to get right.
 func TestConfigNormalizesTrailingSlashIssuer(t *testing.T) {
-	config := Config{Issuer: "https://auth.example.com/", Resource: "https://mcp.example.com", RequireHTTPS: true, PrivateKeyFile: "/keys/signing.pem", StoreBackend: "sqlite", DatabaseURL: "/data/auth.db"}
+	config := Config{Issuer: "https://auth.example.com/", Resources: []string{"https://mcp.example.com"}, RequireHTTPS: true, PrivateKeyFile: "/keys/signing.pem", StoreBackend: "sqlite", DatabaseURL: "/data/auth.db"}
 	if err := config.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
@@ -66,11 +66,11 @@ func TestConfigNormalizesTrailingSlashIssuer(t *testing.T) {
 }
 
 func TestConfigRejectsUnsafeDeployment(t *testing.T) {
-	config := Config{Issuer: "https://auth.example.com", Resource: "https://mcp.example.com", LocalDevelopment: true, RequireHTTPS: true}
+	config := Config{Issuer: "https://auth.example.com", Resources: []string{"https://mcp.example.com"}, LocalDevelopment: true, RequireHTTPS: true}
 	if err := config.Validate(); err == nil {
 		t.Fatal("expected non-loopback local issuer to be rejected")
 	}
-	config = Config{Issuer: "https://auth.example.com", Resource: "https://mcp.example.com", RequireHTTPS: true, StoreBackend: "memory"}
+	config = Config{Issuer: "https://auth.example.com", Resources: []string{"https://mcp.example.com"}, RequireHTTPS: true, StoreBackend: "memory"}
 	if err := config.Validate(); err == nil {
 		t.Fatal("expected production memory store to be rejected")
 	}
@@ -84,7 +84,7 @@ func TestConnectorLoaderRejectsLiteralSecretAndAcceptsProviderConfig(t *testing.
 	if _, err := LoadConnectors(path); err == nil {
 		t.Fatal("expected literal client secret to be rejected")
 	}
-	valid := `{"provider":{"issuer":"https://idp.example.com","authorization_endpoint":"https://idp.example.com/authorize","token_endpoint":"https://idp.example.com/token","jwks_uri":"https://idp.example.com/jwks","client_id":"client","scopes":["openid"],"mcp_scopes":["tools:read"],"exchange_client_id":"exchange","token_endpoint_auth_method":"none","allowed_client_redirect_uris":["https://client.example.com/callback"]}}`
+	valid := `{"provider":{"issuer":"https://idp.example.com","authorization_endpoint":"https://idp.example.com/authorize","token_endpoint":"https://idp.example.com/token","jwks_uri":"https://idp.example.com/jwks","client_id":"client","scopes":["openid"],"exchange_client_id":"exchange","token_endpoint_auth_method":"none","allowed_client_redirect_uris":["https://client.example.com/callback"]}}`
 	if err := os.WriteFile(path, []byte(valid), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestConnectorClientIDEnvIndirection(t *testing.T) {
 		t.Fatal("expected an empty client_id_env value to be rejected")
 	}
 
-	both := ConnectorConfig{Issuer: "https://idp.example.com", AuthorizationEndpoint: "https://idp.example.com/authorize", TokenEndpoint: "https://idp.example.com/token", JWKSURI: "https://idp.example.com/jwks", ClientID: "literal", ClientIDEnv: "TEST_CONNECTOR_CLIENT_ID", TokenEndpointAuthMethod: "none", ExchangeClientID: "exchange", MCPScopes: []string{"tools:read"}}
+	both := ConnectorConfig{Issuer: "https://idp.example.com", AuthorizationEndpoint: "https://idp.example.com/authorize", TokenEndpoint: "https://idp.example.com/token", JWKSURI: "https://idp.example.com/jwks", ClientID: "literal", ClientIDEnv: "TEST_CONNECTOR_CLIENT_ID", TokenEndpointAuthMethod: "none", ExchangeClientID: "exchange"}
 	if err := both.validate("both", false); err == nil {
 		t.Fatal("expected setting both client_id and client_id_env to be rejected")
 	}
@@ -194,12 +194,12 @@ VALUES ('legacy-client','legacy','["https://client.example.com/callback"]','none
 	if err != nil || !legacy.DynamicRegistration {
 		t.Fatalf("pre-existing client should migrate as dynamically registered: %v, %+v", err, legacy)
 	}
-	if err := store.SaveClient(Client{ID: "resource-server", TokenEndpointAuth: "private_key_jwt", PublicKeyPEM: "test"}); err != nil {
+	if err := store.SaveClient(Client{ID: "resource-server", Resource: "https://mcp.example.com/mcp", TokenEndpointAuth: "private_key_jwt", PublicKeyPEM: "test"}); err != nil {
 		t.Fatalf("save client using migrated column: %v", err)
 	}
 	client, err := store.GetClient("resource-server")
-	if err != nil || client.PublicKeyPEM != "test" {
-		t.Fatalf("public_key_pem did not round-trip after migration: %v, %+v", err, client)
+	if err != nil || client.PublicKeyPEM != "test" || client.Resource != "https://mcp.example.com/mcp" {
+		t.Fatalf("resource client did not round-trip after migration: %v, %+v", err, client)
 	}
 	if err := store.SaveClient(Client{ID: "dyn-client", Name: "Dyn App", TokenEndpointAuth: "none", RedirectURIs: []string{"http://127.0.0.1:9/callback"}, DynamicRegistration: true}); err != nil {
 		t.Fatalf("save dynamically registered client: %v", err)
@@ -266,7 +266,7 @@ func TestSQLiteStorePersistsAndRotatesRecords(t *testing.T) {
 
 func testServer(t *testing.T) *Server {
 	t.Helper()
-	config := Config{Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp", AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute, AllowedScopes: []string{"tools:read"}, RegistrationEnabled: true, LocalDevelopment: true, LocalSubject: "test-user"}
+	config := Config{Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"}, AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute, AllowedScopes: []string{"tools:read"}, RegistrationEnabled: true, LocalDevelopment: true, LocalSubject: "test-user"}
 	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "test-user"}, nil, io.Discard)
 	if err != nil {
 		t.Fatal(err)
@@ -340,7 +340,7 @@ func TestBadPKCERejected(t *testing.T) {
 
 func TestLoadResourceClientsValidatesPublicKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "resource-clients.json")
-	if err := os.WriteFile(path, []byte(`[{"client_id":"bad","public_key_pem":"not-a-key"}]`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`[{"client_id":"bad","resource":"https://mcp.example.com/mcp","public_key_pem":"not-a-key"}]`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadResourceClients(path); err == nil {
@@ -355,20 +355,27 @@ func TestLoadResourceClientsValidatesPublicKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-	valid := fmt.Sprintf(`[{"client_id":"resource-server","name":"demo-mcp","public_key_pem":%q}]`, string(publicPEM))
+	valid := fmt.Sprintf(`[{"client_id":"resource-server","name":"demo-mcp","resource":"https://mcp.example.com/mcp","public_key_pem":%q}]`, string(publicPEM))
 	if err := os.WriteFile(path, []byte(valid), 0600); err != nil {
 		t.Fatal(err)
 	}
 	clients, err := LoadResourceClients(path)
-	if err != nil || len(clients) != 1 || clients[0].ClientID != "resource-server" {
+	if err != nil || len(clients) != 1 || clients[0].ClientID != "resource-server" || clients[0].Resource != "https://mcp.example.com/mcp" {
 		t.Fatalf("load resource clients: %v, %+v", err, clients)
+	}
+	withoutResource := fmt.Sprintf(`[{"client_id":"resource-server","public_key_pem":%q}]`, string(publicPEM))
+	if err := os.WriteFile(path, []byte(withoutResource), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadResourceClients(path); err == nil {
+		t.Fatal("resource client without a bound resource was accepted")
 	}
 }
 
 func TestPrivateKeyJWTClientCannotBypassAssertionViaFormClientID(t *testing.T) {
 	instance := testServer(t)
 	instance.TokenExchanger = LocalTokenExchanger{Issuer: instance.Config.Issuer, KeyProvider: instance.KeyProvider, TTL: time.Minute}
-	registerResourceClient(t, instance, "resource-server")
+	registerResourceClient(t, instance, "resource-server", instance.Config.Resources[0])
 	// No client_assertion at all: a private_key_jwt client has no secret, so
 	// it must not fall through the "no secret configured" bypass meant for
 	// TokenEndpointAuth "none" DCR clients.
@@ -395,7 +402,7 @@ func TestTokenExchangeRequiresClientAuthentication(t *testing.T) {
 	}
 }
 
-func registerResourceClient(t *testing.T, instance *Server, clientID string) *rsa.PrivateKey {
+func registerResourceClient(t *testing.T, instance *Server, clientID, resource string) *rsa.PrivateKey {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -406,7 +413,7 @@ func registerResourceClient(t *testing.T, instance *Server, clientID string) *rs
 		t.Fatal(err)
 	}
 	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})
-	if err := instance.Store.SaveClient(Client{ID: clientID, TokenEndpointAuth: "private_key_jwt", PublicKeyPEM: string(publicPEM)}); err != nil {
+	if err := instance.Store.SaveClient(Client{ID: clientID, Resource: resource, TokenEndpointAuth: "private_key_jwt", PublicKeyPEM: string(publicPEM)}); err != nil {
 		t.Fatal(err)
 	}
 	return key
@@ -442,8 +449,8 @@ func exchangeForm(subjectToken, clientID, assertion string) url.Values {
 func TestTokenExchangeWithValidPrivateKeyJWTSucceedsOnce(t *testing.T) {
 	instance := testServer(t)
 	instance.TokenExchanger = LocalTokenExchanger{Issuer: instance.Config.Issuer, KeyProvider: instance.KeyProvider, TTL: time.Minute}
-	key := registerResourceClient(t, instance, "resource-server")
-	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", instance.Config.Resource, []string{"tools:read"}, time.Minute, "")
+	key := registerResourceClient(t, instance, "resource-server", instance.Config.Resources[0])
+	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", instance.Config.Resources[0], []string{"tools:read"}, time.Minute, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +484,7 @@ func TestTokenExchangeWithValidPrivateKeyJWTSucceedsOnce(t *testing.T) {
 func TestTokenExchangeRejectsForeignSubjectToken(t *testing.T) {
 	instance := testServer(t)
 	instance.TokenExchanger = LocalTokenExchanger{Issuer: instance.Config.Issuer, KeyProvider: instance.KeyProvider, TTL: time.Minute}
-	key := registerResourceClient(t, instance, "resource-server")
+	key := registerResourceClient(t, instance, "resource-server", instance.Config.Resources[0])
 	assertion := signTestClientAssertion(t, key, "resource-server", instance.Config.Issuer+"/token")
 	form := exchangeForm("not-a-token-this-server-issued", "resource-server", assertion)
 
@@ -493,7 +500,7 @@ func TestTokenExchangeRejectsForeignSubjectToken(t *testing.T) {
 func TestTokenExchangeRejectsSubjectTokenForWrongResource(t *testing.T) {
 	instance := testServer(t)
 	instance.TokenExchanger = LocalTokenExchanger{Issuer: instance.Config.Issuer, KeyProvider: instance.KeyProvider, TTL: time.Minute}
-	key := registerResourceClient(t, instance, "resource-server")
+	key := registerResourceClient(t, instance, "resource-server", instance.Config.Resources[0])
 	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", "http://some-other-resource/mcp", []string{"tools:read"}, time.Minute, "")
 	if err != nil {
 		t.Fatal(err)
@@ -510,9 +517,55 @@ func TestTokenExchangeRejectsSubjectTokenForWrongResource(t *testing.T) {
 	}
 }
 
+func TestTokenExchangeUsesConfiguredResourcesAndClientBinding(t *testing.T) {
+	const first = "http://localhost:8081/first/mcp"
+	const second = "http://localhost:8081/second/mcp"
+	t.Setenv("MCP_AUTH_RESOURCES", first+","+second)
+	// The removed single-resource setting must not influence issuance or exchange.
+	t.Setenv("MCP_AUTH_RESOURCE", "http://localhost:8081/old/mcp")
+	config := ConfigFromEnv()
+	if len(config.Resources) != 2 || config.Resources[0] != first || config.Resources[1] != second {
+		t.Fatalf("configured resources = %v", config.Resources)
+	}
+	config.LocalDevelopment = true
+	config.RequireHTTPS = false
+	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "user-1"}, nil, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance.TokenExchanger = LocalTokenExchanger{Issuer: config.Issuer, KeyProvider: instance.KeyProvider, TTL: time.Minute}
+	firstKey := registerResourceClient(t, instance, "first-client", first)
+	secondKey := registerResourceClient(t, instance, "second-client", second)
+
+	for _, tc := range []struct {
+		name, resource, clientID string
+		key                      *rsa.PrivateKey
+		want                     int
+	}{
+		{"first resource", first, "first-client", firstKey, http.StatusOK},
+		{"second resource through first client", second, "first-client", firstKey, http.StatusBadRequest},
+		{"second resource", second, "second-client", secondKey, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			subjectToken, err := instance.KeyProvider.Sign(context.Background(), config.Issuer, "user-1", tc.resource, []string{"tools:read"}, time.Minute, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertion := signTestClientAssertion(t, tc.key, tc.clientID, config.TokenEndpoint())
+			request := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(exchangeForm(subjectToken, tc.clientID, assertion).Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			recorder := httptest.NewRecorder()
+			instance.Handler().ServeHTTP(recorder, request)
+			if recorder.Code != tc.want {
+				t.Fatalf("exchange status = %d, want %d: %s", recorder.Code, tc.want, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestRequestLoggingRecordsMethodPathStatus(t *testing.T) {
 	var output bytes.Buffer
-	config := Config{Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp", AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, LocalDevelopment: true, LocalSubject: "test-user"}
+	config := Config{Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"}, AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, LocalDevelopment: true, LocalSubject: "test-user"}
 	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "test-user"}, nil, &output)
 	if err != nil {
 		t.Fatal(err)
@@ -527,7 +580,7 @@ func TestRequestLoggingRecordsMethodPathStatus(t *testing.T) {
 
 func TestRequestLoggingSilentDisablesIt(t *testing.T) {
 	var output bytes.Buffer
-	config := Config{Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp", AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, LocalDevelopment: true, LocalSubject: "test-user", LogLevel: "silent"}
+	config := Config{Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"}, AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, LocalDevelopment: true, LocalSubject: "test-user", LogLevel: "silent"}
 	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "test-user"}, nil, &output)
 	if err != nil {
 		t.Fatal(err)
@@ -555,7 +608,7 @@ func TestAuditRedactsSecrets(t *testing.T) {
 func TestPathMountedIssuerServesRFC8414Metadata(t *testing.T) {
 	config := Config{
 		Issuer:               "http://localhost:18080/mcp-auth",
-		Resource:             "http://localhost:18080/example/mcp",
+		Resources:            []string{"http://localhost:18080/example/mcp"},
 		AccessTokenTTL:       time.Minute,
 		RefreshTokenTTL:      time.Hour,
 		AuthorizationCodeTTL: time.Minute,
@@ -886,13 +939,13 @@ func (timeoutNetError) Temporary() bool { return true }
 
 func TestTokenExchangeUpstreamFaultIsServerError(t *testing.T) {
 	var output bytes.Buffer
-	config := Config{Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp", AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute, AllowedScopes: []string{"tools:read"}, RegistrationEnabled: true, LocalDevelopment: true, LocalSubject: "test-user"}
+	config := Config{Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"}, AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute, AllowedScopes: []string{"tools:read"}, RegistrationEnabled: true, LocalDevelopment: true, LocalSubject: "test-user"}
 	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "test-user"}, stubExchanger{err: fmt.Errorf("no upstream session for subject: missing")}, &output)
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := registerResourceClient(t, instance, "resource-server")
-	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", instance.Config.Resource, []string{"tools:read"}, time.Minute, "")
+	key := registerResourceClient(t, instance, "resource-server", instance.Config.Resources[0])
+	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", instance.Config.Resources[0], []string{"tools:read"}, time.Minute, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -953,7 +1006,7 @@ func TestTokenExchangeUpstreamFaultIsServerError(t *testing.T) {
 
 func TestRegistrationFailureIsAudited(t *testing.T) {
 	var output bytes.Buffer
-	config := Config{Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp", AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, RegistrationEnabled: true, LocalDevelopment: true, LocalSubject: "test-user"}
+	config := Config{Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"}, AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, RegistrationEnabled: true, LocalDevelopment: true, LocalSubject: "test-user"}
 	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "test-user"}, nil, &output)
 	if err != nil {
 		t.Fatal(err)
@@ -973,7 +1026,7 @@ func TestRegistrationFailureIsAudited(t *testing.T) {
 
 func TestAuthorizeUnregisteredClientIsAudited(t *testing.T) {
 	var output bytes.Buffer
-	config := Config{Issuer: "http://localhost:8080", Resource: "http://localhost:8081/mcp", AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, LocalDevelopment: true, LocalSubject: "test-user"}
+	config := Config{Issuer: "http://localhost:8080", Resources: []string{"http://localhost:8081/mcp"}, AccessTokenTTL: time.Minute, AllowedScopes: []string{"tools:read"}, LocalDevelopment: true, LocalSubject: "test-user"}
 	instance, err := NewServer(config, NewMemoryStore(), LocalIdentityProvider{Subject: "test-user"}, nil, &output)
 	if err != nil {
 		t.Fatal(err)

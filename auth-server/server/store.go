@@ -16,8 +16,10 @@ var ErrRefreshRevoked = fmt.Errorf("refresh revoked: %w", ErrNotFound)
 var ErrRefreshClientMismatch = errors.New("refresh client mismatch")
 
 type Client struct {
-	ID                string
-	Name              string
+	ID   string
+	Name string
+	// Resource binds a pre-provisioned resource client to one MCP audience.
+	Resource          string
 	RedirectURIs      []string
 	TokenEndpointAuth string
 	SecretHash        string

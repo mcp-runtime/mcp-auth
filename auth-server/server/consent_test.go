@@ -160,7 +160,6 @@ func TestLoadConnectorsParsesConsent(t *testing.T) {
         "client_id": "client",
         "token_endpoint_auth_method": "none",
         "exchange_client_id": "exchange",
-        "mcp_scopes": ["tools:read"],
         "consent": {
           "display_name": "Inventory",
           "website_url": "https://inventory.example.com",
@@ -313,7 +312,6 @@ func validTestConnector() ConnectorConfig {
 		ClientID:                "client",
 		TokenEndpointAuthMethod: "none",
 		ExchangeClientID:        "exchange",
-		MCPScopes:               []string{"tools:read"},
 	}
 }
 
