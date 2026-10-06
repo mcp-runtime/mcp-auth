@@ -38,7 +38,9 @@ Both an OIDC provider (a connector requesting `openid`, with a verified ID token
 and a plain OAuth 2.0 provider (no `openid`, identity from `userinfo_endpoint`)
 are supported. Endpoints may be configured directly or discovered from the
 issuer, and ID tokens may use RS256, PS256, or ES256. See
-[OIDC or plain OAuth 2.0](docs/auth-server.md#oidc-or-plain-oauth-20).
+[connect an organization's identity provider](docs/auth-server.md#connect-an-organizations-identity-provider)
+for setup. The provider's upstream protocol is separate from the OAuth 2.1
+flow between the MCP client and mcp-auth.
 
 ## Standards position
 
