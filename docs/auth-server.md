@@ -2,7 +2,7 @@
 
 The Go authorization server presents standard OAuth endpoints to MCP clients and
 adapts a selected upstream OIDC or OAuth 2.0 provider at runtime. One process is
-bound to one connector and one MCP resource audience.
+bound to one connector and can serve several MCP resource audiences.
 
 ## Standards and compatibility
 
@@ -110,9 +110,9 @@ Important settings:
 - `MCP_AUTH_STORE`: `memory` for tests/local development or `sqlite` for durable single-node deployments.
 - `MCP_AUTH_DATABASE_URL`: SQLite path when `MCP_AUTH_STORE=sqlite`.
 - `MCP_AUTH_CONNECTORS_FILE`: JSON file containing named upstream connectors.
-- `MCP_AUTH_CONNECTOR`: selected connector name. One running process serves exactly one connector and one
-  `MCP_AUTH_RESOURCE`, by design — see [Serving multiple resources](#serving-multiple-resources) below for
-  more than one. Any other connector in the file is inert, and is named in a startup warning so it can't be
+- `MCP_AUTH_CONNECTOR`: selected connector name. One running process serves exactly one connector and can
+  serve several resources with `MCP_AUTH_RESOURCES` — see [Serving multiple resources](#serving-multiple-resources).
+  Any other connector in the file is inert, and is named in a startup warning so it can't be
   mistaken for live. Local identity/token exchange is available only when `MCP_AUTH_LOCAL_DEVELOPMENT=true`;
   production starts only with a named connector. While the fixed-subject identity provider or the local
   token exchanger is in use, the process logs a warning at startup, again every minute, and on every
@@ -135,7 +135,8 @@ Important settings:
 - `MCP_AUTH_CLIENT_ID_METADATA_HOSTS`: comma-separated hosts a metadata document may be fetched
   from. Empty allows any public host. Non-public destinations are refused at dial time regardless,
   after resolution, so a hostname pointing at a private range cannot be reached.
-- `MCP_AUTH_ALLOWED_SCOPES`: space-independent comma-separated scope allowlist.
+- `MCP_AUTH_ALLOWED_SCOPES`: comma-separated fallback scope allowlist for resources without a specific scope policy.
+- `MCP_AUTH_RESOURCE_SCOPES`: JSON object mapping canonical resource URLs to their allowed MCP scopes, for example `{"https://mcp.example.org/cully/mcp":["tools:read","tools:write"]}`. Every key must also be present in `MCP_AUTH_RESOURCES`. Invalid entries fail startup. The authorization server checks the selected resource's scopes during authorization and token issuance and advertises them in that resource's protected-resource metadata. MCP Runtime sets this from each server's `auth.scopes`.
 - `MCP_AUTH_TRUSTED_ORIGINS`: exact CORS origins; keep this restrictive.
 - `MCP_AUTH_REQUIRE_HTTPS`: enable outside local development. With a plain-HTTP `MCP_AUTH_ISSUER`,
   the upstream redirect_uri this server registers becomes `http://.../identity/callback`, which most
@@ -663,6 +664,11 @@ resources**. `MCP_AUTH_RESOURCES` takes a comma-separated list; `/authorize`
 and `/token` reject any `resource` parameter outside it, and each issued token
 is bound to the single resource the client asked for. `MCP_AUTH_RESOURCE` is
 the legacy single-value form, used only when `MCP_AUTH_RESOURCES` is unset.
+
+The selected connector handles upstream identity. A resource's MCP scopes are
+configured separately with `MCP_AUTH_RESOURCE_SCOPES`. The older connector
+`mcp_scopes` field remains an optional fallback for resources without an
+explicit scope policy.
 
 `MCP_AUTH_CONNECTOR` still selects exactly one entry out of
 `MCP_AUTH_CONNECTORS_FILE` even when that file defines several. A connectors

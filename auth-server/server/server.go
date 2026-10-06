@@ -154,7 +154,7 @@ func (s *Server) authorizationMetadata(w http.ResponseWriter, _ *http.Request) {
 		"grant_types_supported":                          []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:token-exchange"},
 		"code_challenge_methods_supported":               []string{"S256"},
 		"token_endpoint_auth_methods_supported":          []string{"none", "client_secret_basic", "client_secret_post", "private_key_jwt"},
-		"scopes_supported":                               s.Config.AllowedScopes,
+		"scopes_supported":                               s.Config.supportedScopes(),
 		"authorization_response_iss_parameter_supported": s.Config.AuthorizationResponseIssuer,
 		"client_id_metadata_document_supported":          s.Config.ClientIDMetadataEnabled,
 		// OpenID Connect Discovery 1.0 section 3 makes these REQUIRED, and the
@@ -195,7 +195,7 @@ func (s *Server) protectedResourceMetadata(w http.ResponseWriter, r *http.Reques
 		"resource":                 resource,
 		"authorization_servers":    []string{s.Config.Issuer},
 		"bearer_methods_supported": []string{"header"},
-		"scopes_supported":         s.Config.AllowedScopes,
+		"scopes_supported":         s.Config.scopesForResource(resource),
 	})
 }
 
@@ -400,8 +400,9 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (AuthorizationReques
 	if !contains(resources, request.Resource) {
 		return request, fmt.Errorf("resource is not recognized")
 	}
+	allowedScopes := s.Config.scopesForResource(request.Resource)
 	for _, scope := range request.Scope {
-		if !contains(s.Config.AllowedScopes, scope) {
+		if !contains(allowedScopes, scope) {
 			return request, fmt.Errorf("scope is not allowed")
 		}
 	}
@@ -470,6 +471,17 @@ func (s *Server) refreshTokenToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientID, subject string, scopes []string, resource, familyID string) {
+	if !contains(s.Config.configuredResources(), resource) {
+		oauthError(w, http.StatusBadRequest, "invalid_target")
+		return
+	}
+	allowedScopes := s.Config.scopesForResource(resource)
+	for _, scope := range scopes {
+		if !contains(allowedScopes, scope) {
+			oauthError(w, http.StatusBadRequest, "invalid_scope")
+			return
+		}
+	}
 	access, err := s.KeyProvider.Sign(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "")
 	if err != nil {
 		s.Audit.Event("token_issue", "failure", map[string]any{"reason": err.Error()})
@@ -637,8 +649,8 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	}
 	if scope := strings.TrimSpace(input.Scope); scope != "" {
 		response["scope"] = scope
-	} else if len(s.Config.AllowedScopes) > 0 {
-		response["scope"] = strings.Join(s.Config.AllowedScopes, " ")
+	} else if scopes := s.Config.supportedScopes(); len(scopes) > 0 {
+		response["scope"] = strings.Join(scopes, " ")
 	}
 	if input.TokenEndpointAuth != "none" && input.TokenEndpointAuth != "" {
 		secret := randomID()

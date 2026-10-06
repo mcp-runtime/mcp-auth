@@ -178,7 +178,11 @@ func buildProviders(config server.Config, store server.Store) (server.Config, se
 			"ignored", strings.Join(ignored, ","),
 		)
 	}
-	config.AllowedScopes = append([]string(nil), connector.MCPScopes...)
+	// Legacy connector scope settings remain a fallback for deployments that
+	// have not moved scope policy into the MCP resource configuration.
+	if len(connector.MCPScopes) > 0 {
+		config.AllowedScopes = append([]string(nil), connector.MCPScopes...)
+	}
 	config.AllowedClientRedirectURIs = append([]string(nil), connector.AllowedClientRedirectURIs...)
 	config.Consent = copyConsent(connector.Consent)
 	callbackURL := config.IdentityCallbackURL()
