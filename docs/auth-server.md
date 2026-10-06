@@ -133,7 +133,7 @@ Important settings:
 - `MCP_AUTH_CLIENT_ID_METADATA_HOSTS`: comma-separated hosts a metadata document may be fetched
   from. Empty allows any public host. Non-public destinations are refused at dial time regardless,
   after resolution, so a hostname pointing at a private range cannot be reached.
-- `MCP_AUTH_ALLOWED_SCOPES`: comma-separated fallback scope allowlist for resources without a specific scope policy.
+- `MCP_AUTH_ALLOWED_SCOPES`: comma-separated fallback scope allowlist for resources without a specific scope policy. Defaults to `tools:read`; request write access through the resource's explicit scope policy.
 - `MCP_AUTH_RESOURCE_SCOPES`: JSON object mapping canonical resource URLs to their allowed MCP scopes, for example `{"https://mcp.example.org/cully/mcp":["tools:read","tools:write"]}`. Every key must also be present in `MCP_AUTH_RESOURCES`. Invalid entries fail startup. The authorization server checks the selected resource's scopes during authorization and token issuance and advertises them in that resource's protected-resource metadata. MCP Runtime sets this from each server's `auth.scopes`.
 - `MCP_AUTH_TRUSTED_ORIGINS`: exact CORS origins; keep this restrictive.
 - `MCP_AUTH_REQUIRE_HTTPS`: enable outside local development. With a plain-HTTP `MCP_AUTH_ISSUER`,

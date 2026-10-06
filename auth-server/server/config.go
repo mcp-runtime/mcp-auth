@@ -280,7 +280,7 @@ func ConfigFromEnv() Config {
 		AccessTokenTTL:              durationEnv("MCP_AUTH_ACCESS_TOKEN_TTL", 10*time.Minute),
 		RefreshTokenTTL:             durationEnv("MCP_AUTH_REFRESH_TOKEN_TTL", 24*time.Hour),
 		AuthorizationCodeTTL:        durationEnv("MCP_AUTH_AUTHORIZATION_CODE_TTL", 2*time.Minute),
-		AllowedScopes:               csvEnv("MCP_AUTH_ALLOWED_SCOPES", []string{"tools:read", "tools:write"}),
+		AllowedScopes:               csvEnv("MCP_AUTH_ALLOWED_SCOPES", []string{"tools:read"}),
 		ResourceScopesJSON:          strings.TrimSpace(os.Getenv("MCP_AUTH_RESOURCE_SCOPES")),
 		TrustedOrigins:              csvEnv("MCP_AUTH_TRUSTED_ORIGINS", nil),
 		PrivateKeyFile:              os.Getenv("MCP_AUTH_PRIVATE_KEY_FILE"),
