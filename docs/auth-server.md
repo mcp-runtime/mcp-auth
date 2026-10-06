@@ -4,6 +4,48 @@ The Go authorization server presents standard OAuth endpoints to MCP clients and
 adapts a selected upstream OIDC or OAuth 2.0 provider at runtime. One process is
 bound to one connector and can serve several MCP resource audiences.
 
+The **MCP-facing flow is OAuth 2.1**. “OAuth 2.0 provider” below describes an
+upstream identity provider that does not offer OIDC; it does not change the
+client-to-MCP authorization flow. See the [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization).
+
+## Connect an organization's identity provider
+
+1. Choose an HTTPS issuer for mcp-auth and the exact public URL of each MCP
+   resource. Set `MCP_AUTH_ISSUER` and `MCP_AUTH_RESOURCES` to those values.
+   Configure the MCP resource server to advertise this issuer through
+   protected-resource metadata and validate tokens for its own URL. Set
+   `MCP_AUTH_RESOURCE_SCOPES` for the resource's allowed MCP tool scopes; these
+   scopes belong to the resource, not the identity-provider connector.
+2. Register a client application for mcp-auth with your organization's identity
+   provider. Register `<MCP_AUTH_ISSUER>/identity/callback` as its exact
+   redirect URI unless you set `MCP_AUTH_IDENTITY_CALLBACK_URL`. See [callback
+   registration](#the-redirect-uri-you-register-with-your-identity-provider).
+3. Create a connector file for the provider. For an OIDC provider with working
+   discovery, the core fields are:
+
+   ```json
+   {
+     "company": {
+       "issuer": "https://id.example.com/realms/team",
+       "client_id": "mcp-auth",
+       "client_secret_env": "MCP_AUTH_UPSTREAM_CLIENT_SECRET",
+       "scopes": ["openid", "profile"]
+     }
+   }
+   ```
+
+   Set `MCP_AUTH_CONNECTORS_FILE` to this file, `MCP_AUTH_CONNECTOR=company`,
+   and supply `MCP_AUTH_UPSTREAM_CLIENT_SECRET` privately. Replace the example
+   issuer, client ID and scopes with your provider's values. The connector
+   obtains endpoints from OIDC discovery when they are not specified. For a
+   provider without OIDC, configure its OAuth 2.0 endpoints, `userinfo_endpoint`
+   and `identity_claims` as described in [OIDC or plain OAuth 2.0](#oidc-or-plain-oauth-20).
+4. Provide a persistent signing key and store, serve the issuer through HTTPS,
+   and choose client registration policy as described in [Run and configure](#run-and-configure).
+   Then connect a real MCP client and verify the authorization-code flow,
+   S256 PKCE, resource-bound token and an authorized tool call. The upstream
+   provider authenticates the person; mcp-auth issues the MCP token.
+
 ## Standards and compatibility
 
 The server supports the MCP OAuth 2.1 authorization profile: RFC 8414
@@ -73,7 +115,7 @@ docker run --rm -p 8080:8080 \
   -e MCP_AUTH_RESOURCES=http://localhost:8081/mcp \
   -e MCP_AUTH_LOCAL_DEVELOPMENT=true \
   -e MCP_AUTH_REQUIRE_HTTPS=false \
-  princekrroshan01/mcp-auth-server:0.3.0
+  princekrroshan01/mcp-auth-server:0.4.4
 ```
 
 That command is local-development-only: it disables TLS and the upstream
@@ -378,7 +420,7 @@ The consent document and the expired-consent response (still HTTP 400) send:
 `style-src 'unsafe-inline'` is there because the stylesheet is a `<style>` element in the document. The page loads no scripts and no external assets. An expired consent request is an HTML page in that same layout, telling the user to return to the application and start again. It is not a plain-text error.
 
 Connector files are keyed JSON objects. They contain upstream endpoints, client
-IDs, requested scopes, MCP scopes, and `client_secret_env`—the name of an
+IDs, requested upstream scopes, and `client_secret_env`—the name of an
 environment variable, never a literal secret. `client_id` can likewise be
 supplied indirectly as `client_id_env`; set exactly one of the two. All
 provider-specific behavior is behind `IdentityProvider` and `TokenExchanger`
