@@ -35,7 +35,6 @@ type ConnectorConfig struct {
 	ClientIDEnv             string   `json:"client_id_env"`
 	ClientSecretEnv         string   `json:"client_secret_env"`
 	Scopes                  []string `json:"scopes"`
-	MCPScopes               []string `json:"mcp_scopes"`
 	ExchangeClientID        string   `json:"exchange_client_id"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	// AllowedUpstreamCallbackURIs restricts which of this server's own

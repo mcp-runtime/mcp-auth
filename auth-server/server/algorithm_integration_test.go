@@ -46,11 +46,11 @@ func TestClientAssertionSupportsES256(t *testing.T) {
 		t.Fatal(err)
 	}
 	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})
-	if err := instance.Store.SaveClient(Client{ID: "es256-resource-server", TokenEndpointAuth: "private_key_jwt", PublicKeyPEM: string(publicPEM), Algorithm: "ES256"}); err != nil {
+	if err := instance.Store.SaveClient(Client{ID: "es256-resource-server", Resource: instance.Config.Resources[0], TokenEndpointAuth: "private_key_jwt", PublicKeyPEM: string(publicPEM), Algorithm: "ES256"}); err != nil {
 		t.Fatal(err)
 	}
 
-	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", instance.Config.Resource, []string{"tools:read"}, time.Minute, "")
+	subjectToken, err := instance.KeyProvider.Sign(context.Background(), instance.Config.Issuer, "user-1", instance.Config.Resources[0], []string{"tools:read"}, time.Minute, "")
 	if err != nil {
 		t.Fatal(err)
 	}

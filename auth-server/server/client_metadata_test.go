@@ -65,7 +65,7 @@ func TestClientMetadataDocumentAuthorize(t *testing.T) {
 		"redirect_uri":          {redirectURI},
 		"code_challenge":        {"challenge"},
 		"code_challenge_method": {"S256"},
-		"resource":              {instance.Config.Resource},
+		"resource":              {instance.Config.Resources[0]},
 	}
 	request := httptest.NewRequest(http.MethodGet, "/authorize?"+query.Encode(), nil)
 	recorder := httptest.NewRecorder()

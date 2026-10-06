@@ -303,7 +303,6 @@ def test_runtime_oidc_connector_and_downstream_tools_call() -> None:
             "client_id": "mock-auth-client",
             "client_secret_env": "",
             "scopes": ["openid"],
-            "mcp_scopes": ["tools:read"],
             "exchange_client_id": "mock-exchange-client",
             "token_endpoint_auth_method": "none",
             "allowed_upstream_callback_uris": [callback_uri],
@@ -320,6 +319,7 @@ def test_runtime_oidc_connector_and_downstream_tools_call() -> None:
                     {
                         "client_id": "resource-server",
                         "name": "test resource server",
+                        "resource": resource_url + "/mcp",
                         "public_key_pem": resource_exchange_public_pem.decode(),
                     }
                 ]
@@ -328,7 +328,7 @@ def test_runtime_oidc_connector_and_downstream_tools_call() -> None:
         environment = {
             **os.environ,
             "MCP_AUTH_ISSUER": auth_url,
-            "MCP_AUTH_RESOURCE": resource_url + "/mcp",
+            "MCP_AUTH_RESOURCES": resource_url + "/mcp",
             "MCP_AUTH_LISTEN_ADDR": f"127.0.0.1:{urlsplit(auth_url).port}",
             "MCP_AUTH_ALLOWED_SCOPES": "tools:read",
             "MCP_AUTH_LOCAL_DEVELOPMENT": "true",

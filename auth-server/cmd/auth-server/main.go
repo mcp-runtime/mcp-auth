@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func main() {
 		slog.Error("server initialization failed", "error", err)
 		os.Exit(1)
 	}
-	if err := loadResourceClients(authServer.Store, config.ResourceClientsFile); err != nil {
+	if err := loadResourceClients(authServer.Store, config.ResourceClientsFile, config.Resources); err != nil {
 		slog.Error("resource client registration failed", "error", err)
 		os.Exit(1)
 	}
@@ -78,7 +79,7 @@ func main() {
 // example, a resource server performing RFC 8693 token exchange) so the
 // token endpoint can authenticate them. Registration is re-applied on every
 // startup, so the file is the source of truth and edits take effect on restart.
-func loadResourceClients(store server.Store, path string) error {
+func loadResourceClients(store server.Store, path string, resources []string) error {
 	if path == "" {
 		return nil
 	}
@@ -87,9 +88,13 @@ func loadResourceClients(store server.Store, path string) error {
 		return err
 	}
 	for _, client := range clients {
+		if !slices.Contains(resources, client.Resource) {
+			return fmt.Errorf("resource client %q binds unconfigured resource %q", client.ClientID, client.Resource)
+		}
 		if err := store.SaveClient(server.Client{
 			ID:                client.ClientID,
 			Name:              client.Name,
+			Resource:          client.Resource,
 			TokenEndpointAuth: "private_key_jwt",
 			PublicKeyPEM:      client.PublicKeyPEM,
 			Algorithm:         client.Algorithm,
@@ -177,11 +182,6 @@ func buildProviders(config server.Config, store server.Store) (server.Config, se
 			"selected", config.ConnectorName,
 			"ignored", strings.Join(ignored, ","),
 		)
-	}
-	// Legacy connector scope settings remain a fallback for deployments that
-	// have not moved scope policy into the MCP resource configuration.
-	if len(connector.MCPScopes) > 0 {
-		config.AllowedScopes = append([]string(nil), connector.MCPScopes...)
 	}
 	config.AllowedClientRedirectURIs = append([]string(nil), connector.AllowedClientRedirectURIs...)
 	config.Consent = copyConsent(connector.Consent)

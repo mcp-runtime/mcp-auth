@@ -13,10 +13,8 @@ import (
 )
 
 type Config struct {
-	Issuer    string
-	Resources []string
-	// Resource is retained for source compatibility; use Resources for new code.
-	Resource             string
+	Issuer               string
+	Resources            []string
 	ListenAddr           string
 	AccessTokenTTL       time.Duration
 	RefreshTokenTTL      time.Duration
@@ -92,7 +90,7 @@ func (c *Config) Validate() error {
 	c.Issuer = strings.TrimRight(c.Issuer, "/")
 	resources := c.configuredResources()
 	if c.Issuer == "" || len(resources) == 0 {
-		return errors.New("issuer and resource are required")
+		return errors.New("issuer and resources are required")
 	}
 	issuer, err := url.Parse(c.Issuer)
 	if err != nil || issuer.Hostname() == "" || issuer.Scheme == "" {
@@ -175,13 +173,7 @@ func (c *Config) Validate() error {
 }
 
 func (c Config) configuredResources() []string {
-	if len(c.Resources) > 0 {
-		return append([]string(nil), c.Resources...)
-	}
-	if c.Resource != "" {
-		return []string{c.Resource}
-	}
-	return nil
+	return append([]string(nil), c.Resources...)
 }
 
 func (c Config) scopesForResource(resource string) []string {
@@ -283,8 +275,7 @@ func (c Config) ConsentEndpoint() string { return c.issuerBase() + "/authorize/c
 func ConfigFromEnv() Config {
 	return Config{
 		Issuer:                      env("MCP_AUTH_ISSUER", "http://localhost:8080"),
-		Resources:                   csvEnv("MCP_AUTH_RESOURCES", nil),
-		Resource:                    env("MCP_AUTH_RESOURCE", "http://localhost:8081/mcp"),
+		Resources:                   csvEnv("MCP_AUTH_RESOURCES", []string{"http://localhost:8081/mcp"}),
 		ListenAddr:                  env("MCP_AUTH_LISTEN_ADDR", ":8080"),
 		AccessTokenTTL:              durationEnv("MCP_AUTH_ACCESS_TOKEN_TTL", 10*time.Minute),
 		RefreshTokenTTL:             durationEnv("MCP_AUTH_REFRESH_TOKEN_TTL", 24*time.Hour),

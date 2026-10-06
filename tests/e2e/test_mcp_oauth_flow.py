@@ -93,7 +93,7 @@ def test_mcp_authorization_code_pkce_and_resource_flow(sdk: str) -> None:
     environment = {
         **os.environ,
         "MCP_AUTH_ISSUER": auth_url,
-        "MCP_AUTH_RESOURCE": resource,
+        "MCP_AUTH_RESOURCES": resource,
         "MCP_AUTH_LISTEN_ADDR": f"127.0.0.1:{auth_port}",
         "MCP_AUTH_ALLOWED_SCOPES": "tools:read",
         "MCP_AUTH_LOCAL_DEVELOPMENT": "true",
