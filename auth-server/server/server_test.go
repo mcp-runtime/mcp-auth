@@ -28,12 +28,12 @@ import (
 
 func TestConfigSecureDefaults(t *testing.T) {
 	for _, name := range []string{
-		"MCP_AUTH_LOCAL_DEVELOPMENT", "MCP_AUTH_REQUIRE_HTTPS", "MCP_AUTH_REGISTRATION_ENABLED",
+		"MCP_AUTH_LOCAL_DEVELOPMENT", "MCP_AUTH_REQUIRE_HTTPS", "MCP_AUTH_REGISTRATION_ENABLED", "MCP_AUTH_ALLOWED_SCOPES",
 	} {
 		t.Setenv(name, "")
 	}
 	config := ConfigFromEnv()
-	if config.LocalDevelopment || !config.RequireHTTPS || config.RegistrationEnabled {
+	if config.LocalDevelopment || !config.RequireHTTPS || config.RegistrationEnabled || len(config.AllowedScopes) != 1 || config.AllowedScopes[0] != "tools:read" {
 		t.Fatalf("insecure defaults: %+v", config)
 	}
 }
