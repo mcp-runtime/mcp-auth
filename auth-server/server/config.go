@@ -1,10 +1,12 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,9 +22,15 @@ type Config struct {
 	RefreshTokenTTL      time.Duration
 	AuthorizationCodeTTL time.Duration
 	AllowedScopes        []string
-	TrustedOrigins       []string
-	PrivateKeyFile       string
-	RegistrationEnabled  bool
+	// ResourceScopes replaces AllowedScopes for the named MCP resource. The
+	// platform supplies this map from each server's own OAuth configuration.
+	ResourceScopes map[string][]string
+	// ResourceScopesJSON is parsed during Validate so malformed deployment
+	// configuration fails startup instead of silently widening access.
+	ResourceScopesJSON  string
+	TrustedOrigins      []string
+	PrivateKeyFile      string
+	RegistrationEnabled bool
 	// IdentityCallback overrides the redirect URI this server registers with
 	// the upstream provider. Empty derives it from the issuer.
 	IdentityCallback string
@@ -143,6 +151,26 @@ func (c *Config) Validate() error {
 	if c.ConnectorsFile != "" && c.ConnectorName == "" {
 		return errors.New("MCP_AUTH_CONNECTOR is required when MCP_AUTH_CONNECTORS_FILE is set")
 	}
+	if c.ResourceScopesJSON != "" {
+		if err := json.Unmarshal([]byte(c.ResourceScopesJSON), &c.ResourceScopes); err != nil || c.ResourceScopes == nil {
+			return errors.New("MCP_AUTH_RESOURCE_SCOPES must be a JSON object of resource URLs to scope arrays")
+		}
+	}
+	for resource, scopes := range c.ResourceScopes {
+		if !contains(resources, resource) {
+			return fmt.Errorf("MCP_AUTH_RESOURCE_SCOPES contains unrecognized resource %q", resource)
+		}
+		if len(scopes) == 0 {
+			return fmt.Errorf("MCP_AUTH_RESOURCE_SCOPES requires scopes for %q", resource)
+		}
+		seen := make(map[string]bool, len(scopes))
+		for _, scope := range scopes {
+			if strings.TrimSpace(scope) != scope || scope == "" || strings.ContainsAny(scope, " \t\r\n\"\\") || seen[scope] {
+				return fmt.Errorf("MCP_AUTH_RESOURCE_SCOPES contains an invalid or duplicate scope for %q", resource)
+			}
+			seen[scope] = true
+		}
+	}
 	return nil
 }
 
@@ -154,6 +182,31 @@ func (c Config) configuredResources() []string {
 		return []string{c.Resource}
 	}
 	return nil
+}
+
+func (c Config) scopesForResource(resource string) []string {
+	if scopes, ok := c.ResourceScopes[resource]; ok {
+		return scopes
+	}
+	return c.AllowedScopes
+}
+
+func (c Config) supportedScopes() []string {
+	seen := make(map[string]bool)
+	for _, scope := range c.AllowedScopes {
+		seen[scope] = true
+	}
+	for _, scopes := range c.ResourceScopes {
+		for _, scope := range scopes {
+			seen[scope] = true
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for scope := range seen {
+		result = append(result, scope)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func isLoopbackHost(host string) bool {
@@ -237,6 +290,7 @@ func ConfigFromEnv() Config {
 		RefreshTokenTTL:             durationEnv("MCP_AUTH_REFRESH_TOKEN_TTL", 24*time.Hour),
 		AuthorizationCodeTTL:        durationEnv("MCP_AUTH_AUTHORIZATION_CODE_TTL", 2*time.Minute),
 		AllowedScopes:               csvEnv("MCP_AUTH_ALLOWED_SCOPES", []string{"tools:read", "tools:write"}),
+		ResourceScopesJSON:          strings.TrimSpace(os.Getenv("MCP_AUTH_RESOURCE_SCOPES")),
 		TrustedOrigins:              csvEnv("MCP_AUTH_TRUSTED_ORIGINS", nil),
 		PrivateKeyFile:              os.Getenv("MCP_AUTH_PRIVATE_KEY_FILE"),
 		RegistrationEnabled:         boolEnv("MCP_AUTH_REGISTRATION_ENABLED", false),

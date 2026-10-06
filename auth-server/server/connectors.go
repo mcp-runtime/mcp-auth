@@ -148,9 +148,6 @@ func (c ConnectorConfig) validate(name string, allowInsecure bool) error {
 	if c.ExchangeClientID == "" {
 		return fmt.Errorf("connector %q is missing exchange_client_id", name)
 	}
-	if len(c.MCPScopes) == 0 {
-		return fmt.Errorf("connector %q is missing mcp_scopes", name)
-	}
 	if c.DownstreamTokenStrategy != "" && c.DownstreamTokenStrategy != DownstreamTokenStrategyUpstreamSession && c.DownstreamTokenStrategy != DownstreamTokenStrategyRFC8693 {
 		return fmt.Errorf("connector %q has unsupported downstream_token_strategy", name)
 	}
