@@ -41,6 +41,10 @@ func main() {
 		slog.Error("resource client registration failed", "error", err)
 		os.Exit(1)
 	}
+	if err := loadExternalCredentials(authServer, config); err != nil {
+		slog.Error("external credential setup failed", "error", err)
+		os.Exit(1)
+	}
 	if config.LocalDevelopment && config.LocalClientID != "" {
 		if err := authServer.Store.SaveClient(server.Client{
 			ID:                config.LocalClientID,
@@ -103,6 +107,28 @@ func loadResourceClients(store server.Store, path string, resources []string) er
 		}
 	}
 	return nil
+}
+
+// loadExternalCredentials enables the credential-access assertion connector
+// from MCP_AUTH_EXTERNAL_CREDENTIALS_FILE. Its resource clients must not reuse
+// an id from the resource clients file, which would silently replace a binding.
+func loadExternalCredentials(authServer *server.Server, config server.Config) error {
+	entries, err := server.LoadExternalCredentials(config.ExternalCredentialsFile, config)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	existing, err := server.LoadResourceClients(config.ResourceClientsFile)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		for _, client := range existing {
+			if client.ClientID == entry.ResourceClient.ClientID {
+				return fmt.Errorf("external credential client %q is also defined in MCP_AUTH_RESOURCE_CLIENTS_FILE", client.ClientID)
+			}
+		}
+	}
+	return authServer.EnableExternalCredentials(entries)
 }
 
 // repeatLocalDevelopmentWarning keeps the local-development identity path

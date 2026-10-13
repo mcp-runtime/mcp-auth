@@ -17,6 +17,11 @@ import (
 	"time"
 )
 
+const (
+	accessTokenType              = "at+jwt"
+	credentialAccessAssertionTyp = "credential-access+jwt"
+)
+
 type KeyManager struct {
 	PrivateKey *rsa.PrivateKey
 	KeyID      string
@@ -60,19 +65,33 @@ func (k *KeyManager) JWKS() map[string]any {
 }
 
 func (k *KeyManager) Sign(issuer, subject, resource string, scopes []string, ttl time.Duration, nonce string) (string, error) {
+	return k.SignWithSession(issuer, subject, resource, scopes, ttl, nonce, "")
+}
+
+// SignWithSession is Sign plus a "sid" claim naming the refresh-token family
+// (login session) the access token belongs to. Empty sid omits the claim.
+func (k *KeyManager) SignWithSession(issuer, subject, resource string, scopes []string, ttl time.Duration, nonce, sid string) (string, error) {
 	now := time.Now().UTC()
 	claims := map[string]any{"iss": issuer, "sub": subject, "aud": resource, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(ttl).Unix(), "jti": randomID(), "scope": joinScopes(scopes)}
 	if nonce != "" {
 		claims["nonce"] = nonce
 	}
-	header := map[string]any{"typ": "at+jwt", "alg": "RS256", "kid": k.KeyID}
+	if sid != "" {
+		claims["sid"] = sid
+	}
+	return k.SignClaims(accessTokenType, claims)
+}
+
+// SignClaims signs arbitrary claims with the given JOSE typ header.
+func (k *KeyManager) SignClaims(typ string, claims map[string]any) (string, error) {
+	header := map[string]any{"typ": typ, "alg": "RS256", "kid": k.KeyID}
 	headEncoded := base64.RawURLEncoding.EncodeToString(mustJSON(header))
 	claimEncoded := base64.RawURLEncoding.EncodeToString(mustJSON(claims))
 	message := []byte(headEncoded + "." + claimEncoded)
 	digest := sha256.Sum256(message)
 	signature, err := rsa.SignPKCS1v15(rand.Reader, k.PrivateKey, cryptoHashSHA256, digest[:])
 	if err != nil {
-		return "", fmt.Errorf("sign access token: %w", err)
+		return "", fmt.Errorf("sign %s: %w", typ, err)
 	}
 	return string(message) + "." + base64.RawURLEncoding.EncodeToString(signature), nil
 }
@@ -89,6 +108,7 @@ func (k *KeyManager) Verify(token string) (map[string]any, error) {
 	var header struct {
 		Algorithm string `json:"alg"`
 		KeyID     string `json:"kid"`
+		Type      string `json:"typ"`
 	}
 	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
@@ -96,6 +116,9 @@ func (k *KeyManager) Verify(token string) (map[string]any, error) {
 	}
 	if err := json.Unmarshal(headerBytes, &header); err != nil || header.Algorithm != "RS256" || header.KeyID != k.KeyID {
 		return nil, errors.New("token algorithm or key is invalid")
+	}
+	if header.Type != accessTokenType {
+		return nil, errors.New("token type is not an access token")
 	}
 	claimBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {

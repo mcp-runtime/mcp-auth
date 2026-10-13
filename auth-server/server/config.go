@@ -58,6 +58,9 @@ type Config struct {
 	StoreBackend            string
 	DatabaseURL             string
 	ResourceClientsFile     string
+	// ExternalCredentialsFile names the JSON array that enables the
+	// credential-access assertion connector (see external_credentials.go).
+	ExternalCredentialsFile string
 	// AllowedClientRedirectURIs restricts dynamic client registration
 	// (POST /register) when non-empty, in addition to validRedirect.
 	// http loopback entries match scheme, hostname, and path and ignore the
@@ -301,6 +304,7 @@ func ConfigFromEnv() Config {
 		StoreBackend:                env("MCP_AUTH_STORE", "memory"),
 		DatabaseURL:                 os.Getenv("MCP_AUTH_DATABASE_URL"),
 		ResourceClientsFile:         os.Getenv("MCP_AUTH_RESOURCE_CLIENTS_FILE"),
+		ExternalCredentialsFile:     os.Getenv("MCP_AUTH_EXTERNAL_CREDENTIALS_FILE"),
 		LogLevel:                    env("MCP_AUTH_LOG_LEVEL", "info"),
 	}
 }

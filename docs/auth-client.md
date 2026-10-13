@@ -36,6 +36,8 @@ the package is published to an index):
 python -m pip install "mcp-auth-client @ git+https://github.com/Agent-Hellboy/mcp-auth.git#subdirectory=auth-client/python"
 ```
 
+See [sdk-audit.md](sdk-audit.md) for how these SDKs compare with the official MCP Python, TypeScript, and Go SDKs.
+
 ## Python
 
 ```python

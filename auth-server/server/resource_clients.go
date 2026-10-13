@@ -67,33 +67,40 @@ func LoadResourceClients(path string) ([]ResourceClient, error) {
 			return nil, fmt.Errorf("resource client %q is duplicated", client.ClientID)
 		}
 		seen[client.ClientID] = true
-		if (client.PublicKeyPEM == "") == (client.PublicKeyFile == "") {
-			return nil, fmt.Errorf("resource client %q must set exactly one of public_key_pem or public_key_file", client.ClientID)
-		}
-		if client.PublicKeyFile != "" {
-			keyData, err := os.ReadFile(client.PublicKeyFile)
-			if err != nil {
-				return nil, fmt.Errorf("resource client %q: read public_key_file: %w", client.ClientID, err)
-			}
-			client.PublicKeyPEM = string(keyData)
-			clients[i].PublicKeyPEM = client.PublicKeyPEM
-		}
-		if client.Algorithm == "" {
-			client.Algorithm = "RS256"
-			clients[i].Algorithm = client.Algorithm
-		}
-		if !validAlgorithm(client.Algorithm) {
-			return nil, fmt.Errorf("resource client %q has an unsupported algorithm %q", client.ClientID, client.Algorithm)
-		}
-		key, err := parsePublicKeyPEM(client.PublicKeyPEM)
-		if err != nil {
-			return nil, fmt.Errorf("resource client %q has an invalid public key: %w", client.ClientID, err)
-		}
-		if !keyMatchesAlgorithm(client.Algorithm, key) {
-			return nil, fmt.Errorf("resource client %q: public key type does not match algorithm %q", client.ClientID, client.Algorithm)
+		if err := resolveResourceClientKey(&clients[i]); err != nil {
+			return nil, err
 		}
 	}
 	return clients, nil
+}
+
+// resolveResourceClientKey loads PublicKeyFile into PublicKeyPEM, defaults the
+// algorithm, and checks that the key parses and suits the algorithm.
+func resolveResourceClientKey(client *ResourceClient) error {
+	if (client.PublicKeyPEM == "") == (client.PublicKeyFile == "") {
+		return fmt.Errorf("resource client %q must set exactly one of public_key_pem or public_key_file", client.ClientID)
+	}
+	if client.PublicKeyFile != "" {
+		keyData, err := os.ReadFile(client.PublicKeyFile)
+		if err != nil {
+			return fmt.Errorf("resource client %q: read public_key_file: %w", client.ClientID, err)
+		}
+		client.PublicKeyPEM = string(keyData)
+	}
+	if client.Algorithm == "" {
+		client.Algorithm = "RS256"
+	}
+	if !validAlgorithm(client.Algorithm) {
+		return fmt.Errorf("resource client %q has an unsupported algorithm %q", client.ClientID, client.Algorithm)
+	}
+	key, err := parsePublicKeyPEM(client.PublicKeyPEM)
+	if err != nil {
+		return fmt.Errorf("resource client %q has an invalid public key: %w", client.ClientID, err)
+	}
+	if !keyMatchesAlgorithm(client.Algorithm, key) {
+		return fmt.Errorf("resource client %q: public key type does not match algorithm %q", client.ClientID, client.Algorithm)
+	}
+	return nil
 }
 
 // parsePublicKeyPEM parses a PKIX PEM-encoded public key and returns it as
