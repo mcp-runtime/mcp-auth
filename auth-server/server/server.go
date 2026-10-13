@@ -412,6 +412,12 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (AuthorizationReques
 			return request, fmt.Errorf("scope is not allowed")
 		}
 	}
+	// RFC 6749 section 3.3: a request that omits scope gets the server's
+	// default, never an empty grant. Some clients (e.g. Cursor CLI) omit it
+	// even when registered with a scope.
+	if len(request.Scope) == 0 {
+		request.Scope = append([]string(nil), allowedScopes...)
+	}
 	return request, nil
 }
 
@@ -511,11 +517,37 @@ func (s *Server) refreshTokenToken(w http.ResponseWriter, r *http.Request, clien
 		oauthError(w, http.StatusBadRequest, "invalid_grant")
 		return
 	}
+	scopes, ok := refreshScopes(token, strings.Fields(r.FormValue("scope")), s.Config.scopesForResource(token.Resource))
+	if !ok {
+		s.Audit.Event("refresh_rejected", "failure", refreshAuditAttrs(r, client.ID, token, "invalid_scope"))
+		oauthError(w, http.StatusBadRequest, "invalid_scope")
+		return
+	}
 	outcome, reason := "success", "rotated"
-	if !s.issueTokens(w, r.Context(), token.ClientID, token.Subject, token.Scope, token.Resource, token.FamilyID) {
+	if !s.issueTokens(w, r.Context(), token.ClientID, token.Subject, scopes, token.Resource, token.FamilyID) {
 		outcome, reason = "failure", "issuance_failed"
 	}
 	s.Audit.Event("refresh_rotated", outcome, refreshAuditAttrs(r, client.ID, token, reason))
+}
+
+// refreshScopes resolves the scope of a refreshed access token. Per RFC 6749
+// section 6 a requested scope may only narrow the original grant; omitting it
+// reuses the grant. A grant that predates scope defaulting and is empty is
+// reapplied from the resource's configured scopes instead of being propagated.
+func refreshScopes(token RefreshToken, requested, resourceScopes []string) ([]string, bool) {
+	granted := token.Scope
+	if len(granted) == 0 {
+		granted = resourceScopes
+	}
+	if len(requested) == 0 {
+		return granted, true
+	}
+	for _, scope := range requested {
+		if !contains(granted, scope) {
+			return nil, false
+		}
+	}
+	return requested, true
 }
 
 func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientID, subject string, scopes []string, resource, familyID string) bool {
@@ -524,6 +556,13 @@ func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientI
 		return false
 	}
 	allowedScopes := s.Config.scopesForResource(resource)
+	if len(scopes) == 0 {
+		scopes = append([]string(nil), allowedScopes...)
+	}
+	if len(scopes) == 0 {
+		oauthError(w, http.StatusBadRequest, "invalid_scope")
+		return false
+	}
 	for _, scope := range scopes {
 		if !contains(allowedScopes, scope) {
 			oauthError(w, http.StatusBadRequest, "invalid_scope")
