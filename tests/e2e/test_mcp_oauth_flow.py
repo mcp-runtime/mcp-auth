@@ -234,7 +234,10 @@ def test_mcp_authorization_code_pkce_and_resource_flow(sdk: str) -> None:
             assert "tools:read" in default_scope_claims.scopes
             default_scope_response = client.post(
                 resource,
-                headers={**request_headers, "Authorization": f"Bearer {no_scope_body['access_token']}"},
+                headers={
+                    **request_headers,
+                    "Authorization": f"Bearer {no_scope_body['access_token']}",
+                },
                 json=initialize,
             )
             assert default_scope_response.status_code == 200
