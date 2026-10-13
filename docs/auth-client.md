@@ -230,6 +230,24 @@ The SDK cache is keyed by subject-token identity, requested audience, and scope.
 It never turns an MCP token into a generic bearer credential, and it never sends
 the resource server's private key to the authorization server.
 
+### Credential-access assertions and typed tokens (SDK 0.4.0)
+
+All three SDKs can request a non-default issued token type and verify non-access JWTs, which is
+what a resource server needs for the [external credential connector](external-credentials.md):
+
+| | Python | TypeScript | Go |
+| --- | --- | --- | --- |
+| Requested type | `TokenExchangeClient(requested_token_type=...)` | `requestedTokenType` | `RequestedTokenType` |
+| No cache (authorise every call, honours session revocation) | `use_cache=False` | `cache: null` | leave `Cache` nil |
+| Typed failure carrying only the status | `ExchangeError.status` (also an `httpx.HTTPStatusError`) | `ExchangeError.status` | `*ExchangeError{Status}` |
+| Accepted JOSE `typ` values | `JWTVerifier(token_types=...)` | `tokenTypes` | `TokenTypes` |
+| Reject untyped tokens | `require_type=True` | `requireType: true` | `RequireType: true` |
+
+Defaults are unchanged: the access-token type is requested and `JWT` / `at+jwt` are accepted.
+A verifier for assertions should use `credential-access+jwt` with the type required, audience
+set to the resource client's `client_id`, and the cache off. The cache key includes the
+requested type, so assertions and access tokens never collide.
+
 ## Conformance fixtures
 
 `sdk-conformance/cases.json` is the shared verdict list for the three verifiers. `jwks.json` is the public key and `key.json` is the private JWK the tests sign with. Add a case by appending an object (`id`, `description`, `expect` of `accept` or `reject`, plus any header, claim, expiry offset, `nbf` offset, clock skew, or `required_scopes` that differ from `defaults`). `kind: "oversized_jwks"` builds a body larger than 1 MiB from `pad_char` and `pad_count`. Do not commit a PEM or a pre-signed JWT. Run the Python, Go, and TypeScript test suites after adding a case. Repeated fetches for an unknown `kid` are covered by a unit test in each SDK, because the JSON file cannot count HTTP calls.

@@ -23,6 +23,7 @@ from .metadata import protected_resource_metadata, required_scopes
 from .models import AuthorizationServerConfig, ProtectedResourceConfig
 from .oauth import OAuthState, authorization_url
 from .token_exchange import (
+    ExchangeError,
     PrivateKeyJWTClientAuth,
     TokenExchangeClient,
     TokenSet,
@@ -30,6 +31,7 @@ from .token_exchange import (
 from .verifier import InsufficientScopeError, JWTVerifier, TokenClaims, TokenVerificationError
 
 __all__ = [
+    "ExchangeError",
     "AuthorizationServerConfig",
     "AsyncHTTPClient",
     "BearerAuthResult",

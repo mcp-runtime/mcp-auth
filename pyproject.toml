@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-auth-client"
-version = "0.3.0"
+version = "0.4.0"
 description = "Provider-neutral OAuth and MCP resource-server SDK"
 readme = "README.md"
 requires-python = ">=3.12"

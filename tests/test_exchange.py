@@ -5,8 +5,8 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from mcp_auth_client import PrivateKeyJWTClientAuth, TokenExchangeClient
-from mcp_auth_client.token_exchange import _exchange_cache_key
+from mcp_auth_client import ExchangeError, PrivateKeyJWTClientAuth, TokenExchangeClient
+from mcp_auth_client.token_exchange import ACCESS_TOKEN_TYPE, _exchange_cache_key
 
 
 @pytest.mark.asyncio
@@ -68,3 +68,54 @@ def test_exchange_cache_key_hashes_token_audience_and_scopes() -> None:
     key = _exchange_cache_key("subject-token", "https://api.example.com", {"b", "a"})
     assert key == hashlib.sha256(b"subject-token\0https://api.example.com\0a b").hexdigest()
     assert "subject-token" not in key
+
+
+ASSERTION_TYPE = "urn:mcp-auth:token-type:credential-access-assertion"
+
+
+@pytest.mark.asyncio
+async def test_requested_token_type_is_sent_and_cached_separately() -> None:
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        form = dict(item.split("=", 1) for item in request.content.decode().split("&"))
+        requested.append(form["requested_token_type"])
+        return httpx.Response(
+            200, json={"access_token": "assertion", "token_type": "N_A", "expires_in": 60}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with TokenExchangeClient(
+            "https://auth.example.com/token",
+            http_client=http,
+            requested_token_type=ASSERTION_TYPE,
+        ) as exchange:
+            token = await exchange.exchange("subject", "https://mcp.example.com/mcp")
+            await exchange.exchange("subject", "https://mcp.example.com/mcp")
+            await exchange.exchange("subject", "https://mcp.example.com/mcp", use_cache=False)
+    assert token.token_type == "N_A"
+    assert (
+        requested == ["urn%3Amcp-auth%3Atoken-type%3Acredential-access-assertion"] * 2
+    )  # second call hit the cache, third bypassed it
+
+
+def test_cache_key_depends_on_requested_token_type() -> None:
+    default = _exchange_cache_key("s", "a", frozenset({"x"}))
+    assert default == _exchange_cache_key("s", "a", frozenset({"x"}), ACCESS_TOKEN_TYPE)
+    assert default != _exchange_cache_key("s", "a", frozenset({"x"}), ASSERTION_TYPE)
+
+
+@pytest.mark.asyncio
+async def test_exchange_error_carries_only_the_status() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"error": "insufficient_scope", "secret": "do-not-leak"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with TokenExchangeClient(
+            "https://auth.example.com/token", http_client=http
+        ) as exchange:
+            with pytest.raises(ExchangeError) as raised:
+                await exchange.exchange("subject", "https://mcp.example.com/mcp")
+    assert raised.value.status == 403
+    assert "do-not-leak" not in str(raised.value)
+    assert isinstance(raised.value, httpx.HTTPStatusError)
