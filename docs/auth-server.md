@@ -177,6 +177,7 @@ Important settings:
   after resolution, so a hostname pointing at a private range cannot be reached.
 - `MCP_AUTH_ALLOWED_SCOPES`: comma-separated fallback scope allowlist for resources without a specific scope policy. Defaults to `tools:read`; request write access through the resource's explicit scope policy. A client that omits `scope` on `/authorize` is granted the selected resource's full scope list (shown on the consent page), so tokens never carry an empty `scope`. A refresh may pass `scope` to narrow the grant but never widen it.
 - `MCP_AUTH_RESOURCE_SCOPES`: JSON object mapping canonical resource URLs to their allowed MCP scopes, for example `{"https://mcp.example.org/cully/mcp":["tools:read","tools:write"]}`. Every key must also be present in `MCP_AUTH_RESOURCES`. Invalid entries fail startup. The authorization server checks the selected resource's scopes during authorization and token issuance and advertises them in that resource's protected-resource metadata. MCP Runtime sets this from each server's `auth.scopes`.
+- `MCP_AUTH_EXTERNAL_CREDENTIALS_FILE`: JSON array enabling the provider-neutral credential-access assertion connector for separately deployed resource servers. See [external-credentials.md](external-credentials.md).
 - `MCP_AUTH_TRUSTED_ORIGINS`: exact CORS origins; keep this restrictive.
 - `MCP_AUTH_REQUIRE_HTTPS`: enable outside local development. With a plain-HTTP `MCP_AUTH_ISSUER`,
   the upstream redirect_uri this server registers becomes `http://.../identity/callback`, which most

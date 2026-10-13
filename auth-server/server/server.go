@@ -28,6 +28,9 @@ type Server struct {
 	// Nil uses a client with a short timeout that does not follow redirects.
 	ClientMetadataClient *http.Client
 	now                  func() time.Time
+	// externalCredentials maps a resource client id to its credential-access
+	// connector. Set through EnableExternalCredentials.
+	externalCredentials map[string]ExternalCredential
 }
 
 type AuthorizationRequest struct {
@@ -568,7 +571,13 @@ func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientI
 	if familyID == "" {
 		familyID = randomID()
 	}
-	access, err := s.KeyProvider.Sign(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "")
+	var access string
+	var err error
+	if signer, ok := s.KeyProvider.(SessionSigner); ok {
+		access, err = signer.SignWithSession(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "", familyID)
+	} else {
+		access, err = s.KeyProvider.Sign(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "")
+	}
 	if err != nil {
 		s.Audit.Event("token_issue", "failure", map[string]any{"reason": "signing_failed"})
 		oauthError(w, http.StatusInternalServerError, "server_error")
@@ -591,6 +600,15 @@ func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientI
 // itself issued for the authenticated resource client's bound resource, rather than relaying an arbitrary
 // caller-supplied string to the upstream provider.
 func (s *Server) exchange(w http.ResponseWriter, r *http.Request, client Client) {
+	if entry, ok := s.externalCredentials[client.ID]; ok {
+		s.exchangeExternalCredential(w, r, client, entry)
+		return
+	}
+	if r.FormValue("requested_token_type") == CredentialAccessAssertionTokenType {
+		s.Audit.Event("credential_assertion", "failure", map[string]any{"client_id": client.ID, "reason": "client_not_external_credential"})
+		oauthError(w, http.StatusBadRequest, "unauthorized_client")
+		return
+	}
 	if s.TokenExchanger == nil {
 		oauthError(w, http.StatusBadRequest, "unsupported_grant_type")
 		return
@@ -604,6 +622,11 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request, client Client)
 	subjectClaims, err := s.KeyProvider.Verify(r.Context(), subjectToken)
 	if err != nil {
 		s.Audit.Event("token_exchange", "failure", map[string]any{"client_id": client.ID, "audience": r.FormValue("audience"), "reason": "invalid_subject_token"})
+		oauthError(w, http.StatusBadRequest, "invalid_grant")
+		return
+	}
+	if subjectClaims["iss"] != s.Config.Issuer {
+		s.Audit.Event("token_exchange", "failure", map[string]any{"client_id": client.ID, "audience": r.FormValue("audience"), "reason": "subject_token_issuer_mismatch"})
 		oauthError(w, http.StatusBadRequest, "invalid_grant")
 		return
 	}

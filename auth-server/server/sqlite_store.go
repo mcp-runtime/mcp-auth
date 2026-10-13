@@ -257,6 +257,21 @@ FROM authorization_codes WHERE value_hash=?`, HashSecret(value)).Scan(&code.Clie
 	return code, nil
 }
 
+func (s *SQLiteStore) RefreshFamilyActive(familyID string, now time.Time) (bool, error) {
+	if familyID == "" {
+		return false, nil
+	}
+	var revoked, live int
+	err := s.db.QueryRow(`SELECT
+COALESCE(SUM(CASE WHEN revoked=1 THEN 1 ELSE 0 END),0),
+COALESCE(SUM(CASE WHEN used=0 AND revoked=0 AND expires_at>? THEN 1 ELSE 0 END),0)
+FROM refresh_tokens WHERE family_id=?`, now.UnixNano(), familyID).Scan(&revoked, &live)
+	if err != nil {
+		return false, err
+	}
+	return revoked == 0 && live > 0, nil
+}
+
 func (s *SQLiteStore) SaveRefreshToken(token RefreshToken) error {
 	scope, err := json.Marshal(token.Scope)
 	if err != nil {

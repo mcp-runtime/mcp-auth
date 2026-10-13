@@ -101,6 +101,10 @@ type Store interface {
 	ConsumeRefreshTokenForClient(string, string, time.Time) (RefreshToken, error)
 	RevokeRefreshToken(string) error
 	RevokeRefreshFamily(string) error
+	// RefreshFamilyActive reports whether the login session behind a refresh
+	// family can still mint access tokens: no member is revoked and one
+	// unused, unexpired token remains. An unknown or empty family is inactive.
+	RefreshFamilyActive(familyID string, now time.Time) (bool, error)
 	SaveConsentRequest(ConsentRequest) error
 	ConsumeConsentRequest(string, time.Time) (ConsentRequest, error)
 	// ConsumeClientAssertionJTI records a client_assertion's (client_id, jti)
@@ -273,6 +277,27 @@ func (s *MemoryStore) RevokeRefreshFamily(value string) error {
 		}
 	}
 	return nil
+}
+
+func (s *MemoryStore) RefreshFamilyActive(familyID string, now time.Time) (bool, error) {
+	if familyID == "" {
+		return false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	live := false
+	for _, token := range s.refresh {
+		if token.FamilyID != familyID {
+			continue
+		}
+		if token.Revoked {
+			return false, nil
+		}
+		if !token.Used && token.ExpiresAt.After(now) {
+			live = true
+		}
+	}
+	return live, nil
 }
 
 func (s *MemoryStore) SaveConsentRequest(request ConsentRequest) error {
