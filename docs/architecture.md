@@ -144,6 +144,15 @@ flowchart LR
 `private_key_jwt` proves which resource server is requesting exchange. It does not
 identify the end user; the validated MCP token remains the subject credential.
 
+## External credential resource servers
+
+A resource server that injects per-user upstream credentials from its own secret manager
+(for example a gateway in front of an MCP backend) uses the same exchange endpoint but
+receives a signed, short-lived credential-access assertion instead of an upstream token.
+`auth-server` checks the resource client, the subject token and the live session on every
+exchange and never handles the credential. See
+[External credential connectors](external-credentials.md).
+
 ## Extensibility
 
 - `Store` allows durable persistence without changing handlers. OAuth state belongs in a shared managed store for multi-instance deployments.

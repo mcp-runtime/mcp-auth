@@ -58,6 +58,9 @@ type Config struct {
 	StoreBackend            string
 	DatabaseURL             string
 	ResourceClientsFile     string
+	// ExternalCredentialsFile registers provider-neutral external credential
+	// connectors (see external_credentials.go).
+	ExternalCredentialsFile string
 	// AllowedClientRedirectURIs restricts dynamic client registration
 	// (POST /register) when non-empty, in addition to validRedirect.
 	// http loopback entries match scheme, hostname, and path and ignore the
@@ -175,6 +178,9 @@ func (c *Config) Validate() error {
 func (c Config) configuredResources() []string {
 	return append([]string(nil), c.Resources...)
 }
+
+// ScopesForResource returns the scopes the resource may be issued.
+func (c Config) ScopesForResource(resource string) []string { return c.scopesForResource(resource) }
 
 func (c Config) scopesForResource(resource string) []string {
 	if scopes, ok := c.ResourceScopes[resource]; ok {
@@ -301,6 +307,7 @@ func ConfigFromEnv() Config {
 		StoreBackend:                env("MCP_AUTH_STORE", "memory"),
 		DatabaseURL:                 os.Getenv("MCP_AUTH_DATABASE_URL"),
 		ResourceClientsFile:         os.Getenv("MCP_AUTH_RESOURCE_CLIENTS_FILE"),
+		ExternalCredentialsFile:     os.Getenv("MCP_AUTH_EXTERNAL_CREDENTIALS_FILE"),
 		LogLevel:                    env("MCP_AUTH_LOG_LEVEL", "info"),
 	}
 }

@@ -27,3 +27,26 @@ func (p LocalKeyProvider) JWKS(_ context.Context) (map[string]any, error) { retu
 func (p LocalKeyProvider) Verify(_ context.Context, token string) (map[string]any, error) {
 	return p.Keys.Verify(token)
 }
+
+// SessionSigner is an optional KeyProvider extension that adds a session id
+// (the refresh-token family) to access tokens so token exchange can check that
+// the login session is still active. Providers that do not implement it keep
+// issuing tokens without "sid"; those tokens cannot be exchanged for external
+// credentials.
+type SessionSigner interface {
+	SignWithSession(ctx context.Context, issuer, subject, resource string, scopes []string, ttl time.Duration, sessionID string) (string, error)
+}
+
+// ClaimsSigner is an optional KeyProvider extension that signs arbitrary
+// claims under a caller-chosen JOSE "typ", used for credential-access assertions.
+type ClaimsSigner interface {
+	SignClaims(ctx context.Context, typ string, claims map[string]any) (string, error)
+}
+
+func (p LocalKeyProvider) SignWithSession(_ context.Context, issuer, subject, resource string, scopes []string, ttl time.Duration, sessionID string) (string, error) {
+	return p.Keys.signClaims("at+jwt", baseClaims(issuer, subject, resource, scopes, ttl, "", sessionID))
+}
+
+func (p LocalKeyProvider) SignClaims(_ context.Context, typ string, claims map[string]any) (string, error) {
+	return p.Keys.signClaims(typ, claims)
+}

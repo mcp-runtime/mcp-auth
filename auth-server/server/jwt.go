@@ -60,19 +60,30 @@ func (k *KeyManager) JWKS() map[string]any {
 }
 
 func (k *KeyManager) Sign(issuer, subject, resource string, scopes []string, ttl time.Duration, nonce string) (string, error) {
+	return k.signClaims("at+jwt", baseClaims(issuer, subject, resource, scopes, ttl, nonce, ""))
+}
+
+func baseClaims(issuer, subject, resource string, scopes []string, ttl time.Duration, nonce, sessionID string) map[string]any {
 	now := time.Now().UTC()
 	claims := map[string]any{"iss": issuer, "sub": subject, "aud": resource, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(ttl).Unix(), "jti": randomID(), "scope": joinScopes(scopes)}
 	if nonce != "" {
 		claims["nonce"] = nonce
 	}
-	header := map[string]any{"typ": "at+jwt", "alg": "RS256", "kid": k.KeyID}
+	if sessionID != "" {
+		claims["sid"] = sessionID
+	}
+	return claims
+}
+
+func (k *KeyManager) signClaims(typ string, claims map[string]any) (string, error) {
+	header := map[string]any{"typ": typ, "alg": "RS256", "kid": k.KeyID}
 	headEncoded := base64.RawURLEncoding.EncodeToString(mustJSON(header))
 	claimEncoded := base64.RawURLEncoding.EncodeToString(mustJSON(claims))
 	message := []byte(headEncoded + "." + claimEncoded)
 	digest := sha256.Sum256(message)
 	signature, err := rsa.SignPKCS1v15(rand.Reader, k.PrivateKey, cryptoHashSHA256, digest[:])
 	if err != nil {
-		return "", fmt.Errorf("sign access token: %w", err)
+		return "", fmt.Errorf("sign token: %w", err)
 	}
 	return string(message) + "." + base64.RawURLEncoding.EncodeToString(signature), nil
 }

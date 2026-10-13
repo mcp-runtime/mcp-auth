@@ -445,3 +445,16 @@ func boolInt(value bool) int {
 	}
 	return 0
 }
+
+func (s *SQLiteStore) RefreshFamilyActive(familyID string, now time.Time) (bool, error) {
+	if familyID == "" {
+		return false, nil
+	}
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM refresh_tokens WHERE family_id=? AND used=0 AND revoked=0 AND expires_at>?`,
+		familyID, now.UnixNano()).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
