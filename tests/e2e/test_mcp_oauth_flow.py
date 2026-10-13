@@ -226,18 +226,43 @@ def test_mcp_authorization_code_pkce_and_resource_flow(sdk: str) -> None:
                 },
             )
             assert no_scope_response.status_code == 200
-            insufficient_response = client.post(
+            # An authorize request that omits scope is granted the resource's
+            # default scopes; it must never yield an empty-scope token.
+            no_scope_body = no_scope_response.json()
+            assert no_scope_body["scope"] == "tools:read"
+            default_scope_claims = asyncio.run(verifier.verify(no_scope_body["access_token"]))
+            assert "tools:read" in default_scope_claims.scopes
+            default_scope_response = client.post(
                 resource,
                 headers={
                     **request_headers,
-                    "Authorization": f"Bearer {no_scope_response.json()['access_token']}",
+                    "Authorization": f"Bearer {no_scope_body['access_token']}",
                 },
                 json=initialize,
             )
-            # FastMCP currently maps verifier failures to 401 while the Go and
-            # TypeScript adapters distinguish insufficient scope with 403.
-            # Both statuses prove that the SDK refused the under-scoped token.
-            assert insufficient_response.status_code in {401, 403}
+            assert default_scope_response.status_code == 200
+
+            # Refresh keeps the granted scope and may only narrow it.
+            refreshed = client.post(
+                auth.token_endpoint,
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": client_id,
+                    "refresh_token": no_scope_body["refresh_token"],
+                },
+            )
+            assert refreshed.status_code == 200
+            assert refreshed.json()["scope"] == "tools:read"
+            widened = client.post(
+                auth.token_endpoint,
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": client_id,
+                    "refresh_token": refreshed.json()["refresh_token"],
+                    "scope": "tools:read tools:write",
+                },
+            )
+            assert widened.status_code == 400
 
             mcp_response = client.post(
                 resource,
