@@ -3,6 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import {
   AuthenticationError,
+  ExchangeError,
   JWTVerifier,
   TokenExchangeCache,
   TokenExchangeClient,
@@ -220,4 +221,50 @@ test("exchange refuses redirects so a 307 cannot resend the body over http", asy
   });
   await client.exchange("subject-token", "https://api.example.com");
   assert.equal(seen?.redirect, "error");
+});
+
+test("requestedTokenType is sent, cached separately, and can bypass the cache", async () => {
+  const assertionType = "urn:mcp-auth:token-type:credential-access-assertion";
+  const requested: (string | null)[] = [];
+  const fetcher = async (_input: unknown, init?: RequestInit) => {
+    requested.push(new URLSearchParams(String(init?.body)).get("requested_token_type"));
+    return new Response(JSON.stringify({ access_token: "assertion", token_type: "N_A", expires_in: 60 }));
+  };
+  const cached = new TokenExchangeClient({ endpoint: `${issuer}/token`, fetch: fetcher, requestedTokenType: assertionType });
+  assert.equal((await cached.exchange("subject", "https://mcp.example.com/mcp")).tokenType, "N_A");
+  await cached.exchange("subject", "https://mcp.example.com/mcp");
+  assert.deepEqual(requested, [assertionType]);
+
+  const fresh = new TokenExchangeClient({ endpoint: `${issuer}/token`, fetch: fetcher, requestedTokenType: assertionType, cache: null });
+  await fresh.exchange("subject", "https://mcp.example.com/mcp");
+  await fresh.exchange("subject", "https://mcp.example.com/mcp");
+  assert.equal(requested.length, 3);
+});
+
+test("a failed exchange throws ExchangeError with only the status", async () => {
+  const client = new TokenExchangeClient({
+    endpoint: `${issuer}/token`,
+    fetch: async () => new Response(JSON.stringify({ error: "insufficient_scope", secret: "do-not-leak" }), { status: 403 }),
+  });
+  await assert.rejects(client.exchange("subject", "https://mcp.example.com/mcp"), (error: unknown) => {
+    assert.ok(error instanceof ExchangeError);
+    assert.equal(error.status, 403);
+    assert.ok(!String(error.message).includes("do-not-leak"));
+    return true;
+  });
+});
+
+test("tokenTypes and requireType gate the JOSE typ header", async () => {
+  const make = (options: Record<string, unknown> = {}) => new JWTVerifier({
+    jwksUri: `${issuer}/.well-known/jwks.json`, issuer, audience,
+    fetch: async () => new Response(JSON.stringify({ keys: [{ ...jwk, kid: "test-key" }] })), ...options,
+  });
+  const assertion = jwt({}, { typ: "credential-access+jwt" });
+  await assert.rejects(make().verify(assertion), TokenVerificationError);
+  assert.equal((await make({ tokenTypes: ["credential-access+jwt"], requireType: true }).verify(assertion)).subject, "user-123");
+  await assert.rejects(make({ tokenTypes: ["credential-access+jwt"] }).verify(jwt()), TokenVerificationError);
+  const untyped = jwt({}, { typ: undefined });
+  await assert.rejects(make({ tokenTypes: ["credential-access+jwt"], requireType: true }).verify(untyped), TokenVerificationError);
+  assert.equal((await make().verify(untyped)).subject, "user-123");
+  assert.throws(() => make({ tokenTypes: [] }), /allowlisted/);
 });

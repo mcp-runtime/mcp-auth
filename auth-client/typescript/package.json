@@ -1,6 +1,6 @@
 {
   "name": "@mcp-auth/client",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Provider-neutral authorization helpers for MCP resource servers",
   "type": "module",
   "main": "./dist/src/index.js",

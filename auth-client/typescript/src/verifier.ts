@@ -34,6 +34,10 @@ export interface JWTVerifierOptions {
   timeoutMs?: number;
   jwksMinFetchMs?: number;
   unknownKeyTtlMs?: number;
+  /** Accepted JOSE `typ` values. Defaults to "JWT" and "at+jwt". */
+  tokenTypes?: readonly string[];
+  /** Reject tokens that carry no `typ`, so a verifier for a non-access token type cannot be satisfied by an untyped JWT. */
+  requireType?: boolean;
 }
 
 interface JWKSDocument { keys: JsonWebKey[] }
@@ -59,6 +63,8 @@ export class JWTVerifier {
   readonly issuer: string;
   readonly audience: string;
   readonly requiredScopes: ReadonlySet<string>;
+  private readonly tokenTypes: readonly string[];
+  private readonly requireType: boolean;
   private readonly fetcher: typeof globalThis.fetch;
   private readonly jwksTtlMs: number;
   private readonly clockSkewSeconds: number;
@@ -73,6 +79,9 @@ export class JWTVerifier {
   private loading: Promise<void> | undefined;
 
   constructor(options: JWTVerifierOptions) {
+    this.tokenTypes = options.tokenTypes ?? ["JWT", "at+jwt"];
+    if (this.tokenTypes.length === 0) throw new Error("at least one JWT type must be allowlisted");
+    this.requireType = options.requireType ?? false;
     this.jwksUri = options.jwksUri;
     this.issuer = options.issuer;
     this.audience = options.audience;
@@ -93,7 +102,8 @@ export class JWTVerifier {
     const header = decodePart(encodedHeader);
     const claims = decodePart(encodedPayload);
     if (header.alg !== "RS256") throw new TokenVerificationError("JWT algorithm is not allowed");
-    if (header.typ !== undefined && header.typ !== "JWT" && header.typ !== "at+jwt") {
+    if (header.typ === undefined && this.requireType) throw new TokenVerificationError("JWT type is missing");
+    if (header.typ !== undefined && (typeof header.typ !== "string" || !this.tokenTypes.includes(header.typ))) {
       throw new TokenVerificationError("JWT type is not allowed");
     }
     if (typeof header.kid !== "string" || !header.kid) throw new TokenVerificationError("JWT kid is missing");

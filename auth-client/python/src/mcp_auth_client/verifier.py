@@ -53,7 +53,15 @@ class JWTVerifier:
         http_timeout: float = 10.0,
         jwks_min_fetch: float = 30.0,
         unknown_key_ttl: float = 30.0,
+        token_types: tuple[str, ...] = ("JWT", "at+jwt"),
+        require_type: bool = False,
     ) -> None:
+        """``token_types`` lists the accepted JOSE ``typ`` values. ``require_type`` rejects
+        tokens with no ``typ``, so a verifier for a non-access token type (for example
+        ``credential-access+jwt``) cannot be satisfied by an untyped JWT.
+        """
+        if not token_types:
+            raise ValueError("at least one JWT type must be allowlisted")
         if not algorithms:
             raise ValueError("at least one JWT algorithm must be allowlisted")
         if any(algorithm not in {"RS256", "RS384", "RS512"} for algorithm in algorithms):
@@ -67,6 +75,8 @@ class JWTVerifier:
         self.jwks_uri, self.issuer, self.audience = jwks_uri, issuer, audience
         self.required_scopes = frozenset(required_scopes)
         self.algorithms = algorithms
+        self.token_types = token_types
+        self.require_type = require_type
         self._http_client = http_client
         self._jwks_ttl = jwks_ttl
         self.ssrf_safe = ssrf_safe
@@ -97,7 +107,9 @@ class JWTVerifier:
             # A present typ must be a string. Guarding on isinstance let a
             # number, list, or object through unchecked, because none of them
             # is one of the two allowed values.
-            if typ is not None and (not isinstance(typ, str) or typ not in {"JWT", "at+jwt"}):
+            if typ is None and self.require_type:
+                raise TokenVerificationError("JWT type is missing")
+            if typ is not None and (not isinstance(typ, str) or typ not in self.token_types):
                 raise TokenVerificationError("JWT type is not allowed")
             if not isinstance(kid, str):
                 raise TokenVerificationError("JWT kid is missing")

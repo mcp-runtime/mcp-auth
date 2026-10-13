@@ -421,3 +421,50 @@ async def test_stale_jwks_still_verifies_while_refetch_is_throttled() -> None:
         await asyncio.sleep(0.05)
         assert (await verifier.verify(token)).subject == "user"
     assert calls == 1
+
+
+def _typed_token(private: rsa.RSAPrivateKey, typ: str | None) -> str:
+    headers: dict[str, object] = {"kid": "test"}
+    if typ is not None:
+        headers["typ"] = typ
+    return jwt.encode(
+        {
+            "iss": "https://auth.example.com",
+            "sub": "user",
+            "aud": "gateway",
+            "exp": time.time() + 300,
+            "scope": "tools:read",
+        },
+        private,
+        algorithm="RS256",
+        headers=headers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_verifier_token_types_and_require_type() -> None:
+    private, jwk = key_pair()
+
+    def verifier(**kwargs: object) -> JWTVerifier:
+        return JWTVerifier.from_jwks(
+            {"keys": [jwk]}, issuer="https://auth.example.com", audience="gateway", **kwargs
+        )
+
+    assertion = _typed_token(private, "credential-access+jwt")
+    with pytest.raises(TokenVerificationError):
+        await verifier().verify(assertion)  # default allowlist is JWT / at+jwt
+    claims = await verifier(token_types=("credential-access+jwt",), require_type=True).verify(
+        assertion
+    )
+    assert claims.subject == "user"
+    with pytest.raises(TokenVerificationError):
+        await verifier(token_types=("credential-access+jwt",)).verify(
+            _typed_token(private, "at+jwt")
+        )
+    with pytest.raises(TokenVerificationError):
+        await verifier(token_types=("credential-access+jwt",), require_type=True).verify(
+            _typed_token(private, None)
+        )
+    assert (await verifier().verify(_typed_token(private, None))).subject == "user"
+    with pytest.raises(ValueError):
+        verifier(token_types=())
