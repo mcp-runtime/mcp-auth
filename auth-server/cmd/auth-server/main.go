@@ -41,6 +41,15 @@ func main() {
 		slog.Error("resource client registration failed", "error", err)
 		os.Exit(1)
 	}
+	externalCredentials, err := server.LoadExternalCredentials(config.ExternalCredentialsFile, config.Resources, config.ScopesForResource)
+	if err != nil {
+		slog.Error("external credential configuration invalid", "error", err)
+		os.Exit(1)
+	}
+	if err := authServer.RegisterExternalCredentials(externalCredentials); err != nil {
+		slog.Error("external credential registration failed", "error", err)
+		os.Exit(1)
+	}
 	if config.LocalDevelopment && config.LocalClientID != "" {
 		if err := authServer.Store.SaveClient(server.Client{
 			ID:                config.LocalClientID,

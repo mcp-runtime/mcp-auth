@@ -24,6 +24,10 @@ type Server struct {
 	IdentityProvider IdentityProvider
 	TokenExchanger   TokenExchanger
 	Audit            *AuditLogger
+	// ExternalCredentials maps a resource URL to its external credential
+	// connector. Exchanges from that resource's client take the
+	// credential-assertion path instead of TokenExchanger.
+	ExternalCredentials map[string]ExternalCredentialConfig
 	// ClientMetadataClient fetches OAuth Client ID Metadata Documents.
 	// Nil uses a client with a short timeout that does not follow redirects.
 	ClientMetadataClient *http.Client
@@ -568,7 +572,13 @@ func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientI
 	if familyID == "" {
 		familyID = randomID()
 	}
-	access, err := s.KeyProvider.Sign(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "")
+	var access string
+	var err error
+	if signer, ok := s.KeyProvider.(SessionSigner); ok {
+		access, err = signer.SignWithSession(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, familyID)
+	} else {
+		access, err = s.KeyProvider.Sign(ctx, s.Config.Issuer, subject, resource, scopes, s.Config.AccessTokenTTL, "")
+	}
 	if err != nil {
 		s.Audit.Event("token_issue", "failure", map[string]any{"reason": "signing_failed"})
 		oauthError(w, http.StatusInternalServerError, "server_error")
@@ -591,6 +601,10 @@ func (s *Server) issueTokens(w http.ResponseWriter, ctx context.Context, clientI
 // itself issued for the authenticated resource client's bound resource, rather than relaying an arbitrary
 // caller-supplied string to the upstream provider.
 func (s *Server) exchange(w http.ResponseWriter, r *http.Request, client Client) {
+	if entry, ok := s.ExternalCredentials[client.Resource]; ok && client.TokenEndpointAuth == "private_key_jwt" {
+		s.exchangeExternal(w, r, client, entry)
+		return
+	}
 	if s.TokenExchanger == nil {
 		oauthError(w, http.StatusBadRequest, "unsupported_grant_type")
 		return

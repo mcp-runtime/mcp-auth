@@ -195,6 +195,10 @@ Important settings:
   with exactly the algorithm it registered — not any algorithm this server happens
   to support, so a client can't switch algorithms without re-registering its key.
 
+- `MCP_AUTH_EXTERNAL_CREDENTIALS_FILE`: JSON array of provider-neutral external credential connectors. A
+  resource server bound to one of them obtains a short-lived credential-access assertion through the
+  token-exchange grant instead of an upstream token. See [External credential connectors](external-credentials.md).
+
 The Dockerfile builds a static, non-root image. Put TLS termination in a trusted reverse proxy or serve the endpoints through an HTTPS gateway.
 
 ## The redirect URI you register with your identity provider

@@ -46,6 +46,11 @@ type JWTVerifier struct {
 	JWKSCacheTTL   time.Duration
 	JWKSMinFetch   time.Duration
 	UnknownKeyTTL  time.Duration
+	// TokenTypes lists the accepted JOSE "typ" values. Empty accepts "JWT" and
+	// "at+jwt". RequireType rejects tokens that carry no typ at all, so a
+	// verifier for a non-access token type cannot be satisfied by an untyped JWT.
+	TokenTypes  []string
+	RequireType bool
 
 	mu          sync.RWMutex
 	refreshMu   sync.Mutex
@@ -84,9 +89,13 @@ func (v *JWTVerifier) VerifyContext(ctx context.Context, token string) (TokenCla
 	// A present typ must be a string: a number, array, or object is not one of
 	// the allowed values, so type-asserting and ignoring the failure let it
 	// through unchecked.
-	if raw, present := header["typ"]; present {
+	raw, present := header["typ"]
+	if !present && v.RequireType {
+		return TokenClaims{}, fmt.Errorf("%w: typ", ErrInvalidToken)
+	}
+	if present {
 		typ, ok := raw.(string)
-		if !ok || (typ != "JWT" && typ != "at+jwt") {
+		if !ok || !v.allowedType(typ) {
 			return TokenClaims{}, fmt.Errorf("%w: typ", ErrInvalidToken)
 		}
 	}
@@ -126,6 +135,18 @@ func (v *JWTVerifier) VerifyContext(ctx context.Context, token string) (TokenCla
 		}
 	}
 	return TokenClaims{Subject: subject, Issuer: v.Issuer, Audience: audienceValues(claims["aud"]), Scopes: scopes, Raw: claims}, nil
+}
+
+func (v *JWTVerifier) allowedType(typ string) bool {
+	if len(v.TokenTypes) == 0 {
+		return typ == "JWT" || typ == "at+jwt"
+	}
+	for _, allowed := range v.TokenTypes {
+		if typ == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *JWTVerifier) allowedAlgorithm(value string) bool {
